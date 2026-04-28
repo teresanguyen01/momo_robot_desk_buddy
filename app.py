@@ -419,9 +419,13 @@ def keyword_fallback(command):
         return {"intent":"daily_briefing","screen":"clock","task":"","spoken_response":""}
 
     # Joke
-    if any(w in cmd for w in ("joke","funny","laugh","fun fact")):
-        return {"intent":"tell_joke","screen":"clock","task":"",
-                "spoken_response":"Why don't scientists trust atoms? Because they make up everything!"}
+    if any(w in cmd for w in ("joke", "funny", "laugh", "fun fact")):
+        return {
+            "intent": "tell_joke",
+            "screen": "clock",
+            "task": "",
+            "spoken_response": random.choice(JOKES)
+        }
 
     # Task mutations
     if any(w in cmd for w in ("add","create","new","remember")):
