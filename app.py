@@ -214,19 +214,70 @@ def parse_command(text):
         print(f"[openai] Error: {e}")
         return None
 
+def _time_response():
+    """Generate a natural spoken time string."""
+    hour   = int(time.strftime("%I"))
+    minute = time.strftime("%M")
+    ampm   = time.strftime("%p").lower()
+    if minute == "00":
+        return f"It's {hour} o'clock {ampm}."
+    elif minute.startswith("0"):
+        return f"It's {hour} oh {minute[1]} {ampm}."
+    else:
+        return f"It's {hour} {minute} {ampm}."
+
+def _weather_response(weather):
+    """Generate a spoken weather summary with clothing recommendations."""
+    try:
+        temp = int(weather["temp"])
+    except (ValueError, KeyError, TypeError):
+        return "I couldn't get the weather right now. Please try again."
+
+    desc = weather.get("description", "")
+    city = weather.get("city", "")
+    d    = desc.lower()
+
+    if temp <= 32:
+        rec = "It's freezing out there! Definitely wear a heavy coat, gloves, and a hat."
+    elif temp <= 45:
+        rec = "It's pretty cold. I'd recommend a warm jacket."
+    elif temp <= 55:
+        rec = "It's chilly. A light jacket or sweater should keep you comfortable."
+    elif temp <= 65:
+        rec = "It's mild today. A light layer or long sleeves should be fine."
+    elif temp <= 75:
+        rec = "It's a comfortable temperature outside. A t-shirt works great."
+    elif temp <= 85:
+        rec = "It's warm out! Light clothing is perfect."
+    else:
+        rec = "It's really hot! Stay hydrated and wear something light and breathable."
+
+    if any(w in d for w in ["rain", "drizzle", "shower"]):
+        rec += " Don't forget your umbrella!"
+    elif any(w in d for w in ["snow", "blizzard", "sleet"]):
+        rec += " Watch out for slippery conditions."
+    elif any(w in d for w in ["sunny", "clear"]):
+        rec += " Sunglasses would be a great idea!"
+    elif "wind" in d:
+        rec += " It's also quite windy, so an extra layer might help."
+
+    return f"The weather in {city} is {temp} degrees and {desc}. {rec}"
+
 def keyword_fallback(command):
     """Keyword matching used when OpenAI is unavailable or fails."""
     cmd = command.lower()
 
     # task mutations — check before generic "task" keyword
     if any(w in cmd for w in ("add", "create", "new", "remember")):
-        # try to extract what comes after "add"/"create"/etc.
         for kw in ("add", "create", "new task", "remember"):
             if kw in cmd:
                 task_name = cmd.split(kw, 1)[-1].strip().strip(".,!?")
                 if task_name:
                     return {"intent": "add_task", "screen": "tasks", "task": task_name,
-                            "spoken_response": f"Added {task_name} to your tasks."}
+                            "spoken_response": f"Got it! I've added {task_name} to your tasks."}
+        # no task name found — trigger multi-turn
+        return {"intent": "add_task", "screen": "tasks", "task": "",
+                "spoken_response": ""}
 
     if any(w in cmd for w in ("complete", "done", "finish", "finished", "check off", "mark")):
         for kw in ("complete", "done with", "finished", "finish", "check off", "mark"):
@@ -234,7 +285,9 @@ def keyword_fallback(command):
                 task_name = cmd.split(kw, 1)[-1].strip().strip(".,!? as done")
                 if task_name:
                     return {"intent": "complete_task", "screen": "tasks", "task": task_name,
-                            "spoken_response": f"Marked {task_name} as done."}
+                            "spoken_response": f"Great job! I've checked off {task_name}."}
+        return {"intent": "complete_task", "screen": "tasks", "task": "",
+                "spoken_response": ""}
 
     if any(w in cmd for w in ("remove", "delete", "cancel")):
         for kw in ("remove", "delete", "cancel"):
@@ -242,61 +295,74 @@ def keyword_fallback(command):
                 task_name = cmd.split(kw, 1)[-1].strip().strip(".,!?")
                 if task_name:
                     return {"intent": "remove_task", "screen": "tasks", "task": task_name,
-                            "spoken_response": f"Removed {task_name}."}
+                            "spoken_response": f"Done! I've removed {task_name}."}
+        return {"intent": "remove_task", "screen": "tasks", "task": "",
+                "spoken_response": ""}
 
-    if "weather" in cmd or "temperature" in cmd or "forecast" in cmd or "outside" in cmd:
-        return {"intent": "get_weather",  "screen": "weather", "task": "",
-                "spoken_response": "Here is the weather."}
+    if any(w in cmd for w in ("weather", "temperature", "forecast", "outside", "wear")):
+        return {"intent": "get_weather", "screen": "weather", "task": "",
+                "spoken_response": ""}  # filled in by execute_action
 
     if any(w in cmd for w in ("task", "todo", "to do", "list", "to-do")):
-        return {"intent": "show_tasks",   "screen": "tasks",   "task": "",
+        return {"intent": "show_tasks", "screen": "tasks", "task": "",
                 "spoken_response": "Here are your tasks."}
 
     if any(w in cmd for w in ("time", "clock", "what time")):
-        t = time.strftime("%I:%M %p")
-        return {"intent": "show_clock",   "screen": "clock",   "task": "",
-                "spoken_response": f"The time is {t}."}
+        return {"intent": "show_clock", "screen": "clock", "task": "",
+                "spoken_response": _time_response()}
 
     return {"intent": "unknown", "screen": "clock", "task": "",
-            "spoken_response": "Sorry, I did not catch that. Try asking about the weather, time, or tasks."}
+            "spoken_response": "Sorry, I didn't catch that. Try asking about the weather, time, or tasks."}
 
 # ── Intent execution ───────────────────────────────────────────────────────────
 def execute_action(action):
     """
     Apply a parsed action to shared state.
-    Any network/blocking work is done BEFORE acquiring the lock.
+    Also fills in action["spoken_response"] with rich text when needed.
+    Network/blocking calls happen BEFORE acquiring the lock.
     """
     intent    = action.get("intent",   "unknown")
     screen    = action.get("screen",   "clock")
     task_name = action.get("task",     "").strip()
 
-    # ── pre-fetch (outside lock) ───────────────────────────────────────────────
+    # ── pre-fetch outside the lock ─────────────────────────────────────────────
     new_weather = None
     if intent == "get_weather":
-        new_weather = fetch_weather()          # network call before lock
+        new_weather = fetch_weather()
 
-    # ── mutate state (inside lock) ─────────────────────────────────────────────
+    # ── mutate state inside the lock ──────────────────────────────────────────
     with state_lock:
         if intent == "get_weather" and new_weather:
             state["weather"] = new_weather
             state["screen"]  = "weather"
+            # Generate rich spoken response now that we have fresh weather data
+            action["spoken_response"] = _weather_response(new_weather)
+
+        elif intent == "show_clock":
+            state["screen"] = "clock"
+            action["spoken_response"] = _time_response()
 
         elif intent == "add_task" and task_name:
-            task = {
-                "id":   next_task_id(state["tasks"]),
-                "name": task_name,
-                "done": False,
-            }
+            task = {"id": next_task_id(state["tasks"]), "name": task_name, "done": False}
             state["tasks"].append(task)
             save_tasks(state["tasks"])
             state["screen"] = "tasks"
+            if not action.get("spoken_response"):
+                action["spoken_response"] = f"Got it! I've added {task_name} to your tasks."
 
         elif intent == "complete_task" and task_name:
+            matched = None
             for t in state["tasks"]:
                 if task_name.lower() in t["name"].lower():
                     t["done"] = True
+                    matched   = t["name"]
             save_tasks(state["tasks"])
             state["screen"] = "tasks"
+            action["spoken_response"] = (
+                f"Great job! I've checked off {matched}."
+                if matched else
+                f"Hmm, I couldn't find a task matching {task_name}."
+            )
 
         elif intent == "remove_task" and task_name:
             state["tasks"] = [
@@ -305,9 +371,106 @@ def execute_action(action):
             ]
             save_tasks(state["tasks"])
             state["screen"] = "tasks"
+            if not action.get("spoken_response"):
+                action["spoken_response"] = f"Done! I've removed {task_name}."
 
         else:
             state["screen"] = screen
+
+# ── Multi-turn conversation handler ───────────────────────────────────────────
+def handle_multi_turn(recognizer, action):
+    """
+    For intents that need a follow-up question (add_task, complete_task,
+    remove_task with no task name), ask the user and listen for one more reply.
+
+    Updates `action` in-place so the caller can speak the final response.
+    Returns the spoken response string.
+    """
+    intent = action.get("intent", "unknown")
+    task   = action.get("task", "").strip()
+
+    # ── add_task: no task name yet ─────────────────────────────────────────────
+    if intent == "add_task" and not task:
+        question = "Sure! What task would you like to add?"
+        with state_lock:
+            state["voice_state"] = "speaking"
+        speak(question)
+
+        with state_lock:
+            state["voice_state"] = "listening"
+
+        task_name = None
+        try:
+            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                task_name = _transcribe(recognizer, source, timeout=7, phrase_limit=6)
+        except OSError:
+            pass
+
+        if task_name:
+            action["task"] = task_name
+            execute_action(action)
+            return action.get("spoken_response",
+                              f"Got it! I've added {task_name} to your tasks.")
+        return "I didn't catch that. Try saying: momo, add a task."
+
+    # ── complete_task: no task name yet ───────────────────────────────────────
+    if intent == "complete_task" and not task:
+        with state_lock:
+            pending = [t["name"] for t in state["tasks"] if not t["done"]]
+
+        if not pending:
+            return "You have no pending tasks to check off!"
+
+        question = "Which task would you like to check off?"
+        with state_lock:
+            state["voice_state"] = "speaking"
+        speak(question)
+
+        with state_lock:
+            state["voice_state"] = "listening"
+
+        task_ref = None
+        try:
+            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                task_ref = _transcribe(recognizer, source, timeout=7, phrase_limit=6)
+        except OSError:
+            pass
+
+        if task_ref:
+            action["task"] = task_ref
+            execute_action(action)
+            return action.get("spoken_response",
+                              f"Great job! I've checked that off.")
+        return "I didn't catch that. Try saying: momo, check off a task."
+
+    # ── remove_task: no task name yet ─────────────────────────────────────────
+    if intent == "remove_task" and not task:
+        question = "Which task would you like to remove?"
+        with state_lock:
+            state["voice_state"] = "speaking"
+        speak(question)
+
+        with state_lock:
+            state["voice_state"] = "listening"
+
+        task_ref = None
+        try:
+            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                task_ref = _transcribe(recognizer, source, timeout=7, phrase_limit=6)
+        except OSError:
+            pass
+
+        if task_ref:
+            action["task"] = task_ref
+            execute_action(action)
+            return action.get("spoken_response", f"Done! Removed {task_ref}.")
+        return "I didn't catch that. Try saying: momo, remove a task."
+
+    # No multi-turn needed — return whatever spoken_response is already set
+    return action.get("spoken_response", "Okay.")
 
 # ── Voice loop (background thread) ────────────────────────────────────────────
 WAKE_WORD = "momo"
@@ -421,15 +584,24 @@ def voice_loop():
             state["voice_state"] = "thinking"
 
         action = parse_command(command) or keyword_fallback(command)
-        execute_action(action)   # network + state mutation, outside lock
 
-        # 2-c  SPEAKING — say the response aloud
-        spoken = action.get("spoken_response", "Okay.")
+        # Execute immediately only if we have everything we need.
+        # Multi-turn intents (add/complete/remove with no task name) are
+        # handled inside handle_multi_turn which calls execute_action itself.
+        needs_followup = (
+            action.get("intent") in ("add_task", "complete_task", "remove_task")
+            and not action.get("task", "").strip()
+        )
+        if not needs_followup:
+            execute_action(action)
+
+        # 2-c  SPEAKING / multi-turn follow-up
+        spoken = handle_multi_turn(recognizer, action)
         with state_lock:
             state["voice_state"] = "speaking"
             state["last_spoken"] = spoken
 
-        speak(spoken)   # blocking espeak | pw-play, outside lock
+        speak(spoken)
 
         # 2-d  Done — return to passive immediately
         with state_lock:
