@@ -5,41 +5,12 @@ Set: export OPENAI_API_KEY=sk-...
 """
 
 import os
-import sys
 import json
 import time
 import threading
 import subprocess
 import requests
-import ctypes
 from flask import Flask, render_template, jsonify, request
-
-# ── Suppress ALSA / JACK stderr spam (harmless warnings from PyAudio) ──────────
-# These errors ("Unknown PCM", "jack server is not running", etc.) are printed
-# by the underlying C libraries when PyAudio enumerates audio devices. They do
-# not affect functionality. Suppressing them keeps the console readable.
-try:
-    _asound = ctypes.cdll.LoadLibrary("libasound.so.2")
-    _ERRFUNC = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_int,
-                                ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p)
-    _asound.snd_lib_error_set_handler(_ERRFUNC(lambda *_: None))
-except Exception:
-    pass  # not on Linux or libasound not found — no problem
-
-import contextlib
-
-@contextlib.contextmanager
-def _quiet_stderr():
-    """Redirect stderr to /dev/null for the duration of the block."""
-    devnull = os.open(os.devnull, os.O_WRONLY)
-    saved   = os.dup(2)
-    os.dup2(devnull, 2)
-    os.close(devnull)
-    try:
-        yield
-    finally:
-        os.dup2(saved, 2)
-        os.close(saved)
 
 # ── Optional imports (degrade gracefully if not installed) ─────────────────────
 try:
@@ -319,11 +290,10 @@ def voice_loop():
         # ══ Phase 1: silent passive listening ════════════════════════════════
         # voice_state = "idle" throughout; screen is NOT touched here.
         try:
-            with _quiet_stderr():
-                with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
-                    recognizer.adjust_for_ambient_noise(source, duration=0.3)
-                    heard = _transcribe(recognizer, source,
-                                        timeout=8, phrase_limit=5)
+            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                heard = _transcribe(recognizer, source,
+                                    timeout=8, phrase_limit=5)
         except OSError as e:
             print(f"[voice] Microphone error: {e}")
             time.sleep(5)
@@ -350,11 +320,10 @@ def voice_loop():
                 state["voice_state"] = "listening"
 
             try:
-                with _quiet_stderr():
-                    with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
-                        recognizer.adjust_for_ambient_noise(source, duration=0.2)
-                        after_wake = _transcribe(recognizer, source,
-                                                 timeout=5, phrase_limit=7)
+                with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
+                    recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                    after_wake = _transcribe(recognizer, source,
+                                             timeout=5, phrase_limit=7)
             except OSError as e:
                 print(f"[voice] Microphone error on follow-up: {e}")
                 with state_lock:
