@@ -110,11 +110,11 @@ def speak(text):
     safe = text.replace('"', "'").replace("`", "'").replace("\\", "")
     wav  = "/tmp/momo_speech.wav"
 
-    # Step 1: render speech to a WAV file
-    r = subprocess.run(f'espeak -a 200 -s 150 "{safe}" -w {wav}', shell=True)
+    # Step 1: render speech to a WAV file using pico2wave
+    r = subprocess.run(f'pico2wave -w {wav} "{safe}"', shell=True)
     if r.returncode != 0:
-        print("[speak] espeak failed")
-        return
+        print("[speak] pico2wave failed — falling back to espeak")
+        subprocess.run(f'espeak -a 200 -s 150 "{safe}" -w {wav}', shell=True)
 
     # Step 2: play the WAV (try pw-play first, fall back to aplay)
     if subprocess.run("which pw-play", shell=True, capture_output=True).returncode == 0:
