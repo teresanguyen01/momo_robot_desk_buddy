@@ -7,6 +7,7 @@ Set: export OPENAI_API_KEY=sk-...
 import os
 import json
 import time
+import asyncio
 import threading
 import subprocess
 import requests
@@ -98,25 +99,50 @@ def fetch_weather(city=CITY):
         return {"city": city, "temp": "--", "description": "Unavailable"}
 
 # ── Speech output ──────────────────────────────────────────────────────────────
+# Voice character — swap to any en-US-*Neural name from:
+# https://speech.microsoft.com/portal (free preview in browser)
+# Good options: JennyNeural (warm), AriaNeural (natural), SaraNeural (friendly)
+VOICE = "en-US-JennyNeural"
+
+async def _edge_tts(text, path):
+    """Generate speech MP3 via edge-tts (Microsoft neural TTS, free)."""
+    try:
+        import edge_tts
+        comm = edge_tts.Communicate(text, VOICE)
+        await comm.save(path)
+        return True
+    except Exception as e:
+        print(f"[speak] edge-tts error: {e}")
+        return False
+
 def speak(text):
     """
-    Blocking TTS: espeak writes a WAV to /tmp, then pw-play plays it.
-    Writing to a file first is more reliable than piping raw PCM because
-    pw-play can read the WAV header instead of needing explicit format flags.
-    Falls back to aplay (ALSA) if pw-play is not found.
+    Blocking TTS using edge-tts (neural voice) → mpg123.
+    Falls back to pico2wave → pw-play/aplay if edge-tts fails.
     Must NOT be called while holding state_lock.
     """
     print(f"[speak] {text}")
     safe = text.replace('"', "'").replace("`", "'").replace("\\", "")
+    mp3  = "/tmp/momo_speech.mp3"
     wav  = "/tmp/momo_speech.wav"
 
-    # Step 1: render speech to a WAV file using pico2wave
+    # Try edge-tts (best quality)
+    success = asyncio.run(_edge_tts(safe, mp3))
+    if success:
+        # mpg123 is the simplest mp3 player on Pi
+        if subprocess.run("which mpg123", shell=True, capture_output=True).returncode == 0:
+            subprocess.run(f"mpg123 -q {mp3}", shell=True)
+            return
+        # fallback: pw-play can handle mp3 on most Pi setups
+        subprocess.run(f"pw-play {mp3}", shell=True)
+        return
+
+    # Fallback: pico2wave → wav
+    print("[speak] falling back to pico2wave")
     r = subprocess.run(f'pico2wave -w {wav} "{safe}"', shell=True)
     if r.returncode != 0:
-        print("[speak] pico2wave failed — falling back to espeak")
         subprocess.run(f'espeak -a 200 -s 150 "{safe}" -w {wav}', shell=True)
 
-    # Step 2: play the WAV (try pw-play first, fall back to aplay)
     if subprocess.run("which pw-play", shell=True, capture_output=True).returncode == 0:
         subprocess.run(f"pw-play {wav}", shell=True)
     else:
