@@ -12,48 +12,51 @@
 
   <!-- ── Screen 1: Clock / Idle ──────────────────────────────────────────── -->
   <div id="clock-screen" class="screen">
-    <div class="momo-face">&#x25D5;&#x203F;&#x25D5;</div>
+    <div class="clock-face">&#x25D5;&#x203F;&#x25D5;</div>
     <div id="time" class="clock-time">--:--</div>
     <div id="date" class="clock-date">Loading...</div>
   </div>
 
   <!-- ── Screen 2: Weather ───────────────────────────────────────────────── -->
   <div id="weather-screen" class="screen hidden">
-    <div class="screen-label">Weather</div>
-    <div id="weather-city"  class="weather-city">--</div>
+    <div id="weather-icon"  class="weather-icon">&#x2600;&#xFE0F;</div>
     <div id="weather-temp"  class="weather-temp">--&deg;F</div>
     <div id="weather-desc"  class="weather-desc">Loading...</div>
+    <div id="weather-city"  class="weather-city">--</div>
   </div>
 
   <!-- ── Screen 3: Tasks ─────────────────────────────────────────────────── -->
   <div id="tasks-screen" class="screen hidden">
-    <div class="screen-label">Today&rsquo;s Tasks</div>
+    <div class="tasks-header">
+      <span class="screen-label">Today&rsquo;s Tasks</span>
+      <span id="tasks-progress" class="tasks-progress"></span>
+    </div>
     <div id="tasks-list"></div>
     <button class="add-btn" onclick="showAddTask()">+ Add Task</button>
   </div>
 
-  <!-- ── Screen 4: Voice (listening / thinking / speaking) ───────────────── -->
-  <div id="voice-screen" class="screen hidden">
-    <div id="voice-face"   class="voice-face">&#x25D5;&#x203F;&#x25D5;</div>
-    <div id="voice-anim"   class="voice-anim">
-      <span></span><span></span><span></span>
-    </div>
-    <div id="voice-status" class="voice-status">Listening...</div>
-  </div>
-
 </div><!-- /#app -->
+
+<!-- ── Voice banner (slides up over content when Momo is active) ────────────── -->
+<div id="voice-banner">
+  <div id="banner-face"   class="banner-face">&#x25D5;&#x203F;&#x25D5;</div>
+  <div id="banner-anim"   class="banner-anim">
+    <span></span><span></span><span></span>
+  </div>
+  <div id="banner-status" class="banner-status">Listening...</div>
+</div>
 
 <!-- ── Navigation ──────────────────────────────────────────────────────────── -->
 <nav>
-  <button id="nav-clock"    onclick="setScreen('clock')"    class="active">&#9711; Clock</button>
-  <button id="nav-weather"  onclick="triggerWeather()">&#9729; Weather</button>
-  <button id="nav-tasks"    onclick="setScreen('tasks')">&#10003; Tasks</button>
+  <button id="nav-clock"   onclick="setScreen('clock')"  class="active">&#9711; Clock</button>
+  <button id="nav-weather" onclick="triggerWeather()">&#9729; Weather</button>
+  <button id="nav-tasks"   onclick="setScreen('tasks')">&#10003; Tasks</button>
 </nav>
 
 <!-- ── Add Task Modal ──────────────────────────────────────────────────────── -->
 <div id="modal" class="modal hidden">
   <div class="modal-box">
-    <div class="modal-title">Add Task</div>
+    <div class="modal-title">New Task</div>
     <input id="task-input" type="text" placeholder="What do you need to do?">
     <div class="modal-buttons">
       <button class="btn-confirm" onclick="addTask()">Add</button>

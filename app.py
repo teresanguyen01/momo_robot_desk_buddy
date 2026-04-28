@@ -100,15 +100,27 @@ def fetch_weather(city=CITY):
 # ── Speech output ──────────────────────────────────────────────────────────────
 def speak(text):
     """
-    Blocking TTS via espeak piped to pw-play.
+    Blocking TTS: espeak writes a WAV to /tmp, then pw-play plays it.
+    Writing to a file first is more reliable than piping raw PCM because
+    pw-play can read the WAV header instead of needing explicit format flags.
+    Falls back to aplay (ALSA) if pw-play is not found.
     Must NOT be called while holding state_lock.
     """
     print(f"[speak] {text}")
     safe = text.replace('"', "'").replace("`", "'").replace("\\", "")
-    subprocess.run(
-        f'espeak -a 200 -s 160 "{safe}" --stdout | pw-play',
-        shell=True
-    )
+    wav  = "/tmp/momo_speech.wav"
+
+    # Step 1: render speech to a WAV file
+    r = subprocess.run(f'espeak -a 200 -s 150 "{safe}" -w {wav}', shell=True)
+    if r.returncode != 0:
+        print("[speak] espeak failed")
+        return
+
+    # Step 2: play the WAV (try pw-play first, fall back to aplay)
+    if subprocess.run("which pw-play", shell=True, capture_output=True).returncode == 0:
+        subprocess.run(f"pw-play {wav}", shell=True)
+    else:
+        subprocess.run(f"aplay {wav}", shell=True)
 
 # ── OpenAI command parser ──────────────────────────────────────────────────────
 _INTENT_SCHEMA = {
