@@ -357,7 +357,7 @@ def keyword_fallback(command):
         return {"intent":"show_clock","screen":"clock","task":"","spoken_response":_time_response()}
 
     return {"intent":"unknown","screen":"clock","task":"",
-            "spoken_response":"Hmm, I didn't quite catch that! Try asking about the weather, time, or tasks."}
+            "spoken_response":"Hmm, I didn't quite catch that! You can ask me about the weather, time, or tasks — or try: start a timer, set a reminder, tell me a joke, or give me your daily briefing!"}
 
 # ── Intent execution ───────────────────────────────────────────────────────────
 def execute_action(action):
