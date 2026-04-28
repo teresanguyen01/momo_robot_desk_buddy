@@ -21,7 +21,7 @@
   <aside id="sidebar">
 
     <!-- Robot face + name -->
-    <div class="sb-face">&#x25D5;&#x203F;&#x25D5;</div>
+    <div id="sb-face" class="sb-face">&#x25D5;&#x203F;&#x25D5;</div>
     <div class="sb-name">MOMO</div>
 
     <div class="sb-divider"></div>
@@ -54,13 +54,16 @@
 
     <!-- Nav buttons -->
     <nav id="sidebar-nav">
-      <button id="nav-clock"    onclick="setScreen('clock')"   class="active">Clock</button>
-      <button id="nav-weather"  onclick="triggerWeather()">Weather</button>
-      <button id="nav-tasks"    onclick="setScreen('tasks')">Tasks</button>
+      <button id="nav-clock"   onclick="setScreen('clock')"  class="active">Clock</button>
+      <button id="nav-weather" onclick="triggerWeather()">Weather</button>
+      <button id="nav-tasks"   onclick="setScreen('tasks')">Tasks</button>
     </nav>
 
-    <!-- Mic status dot -->
-    <div id="mic-dot" title="Microphone status"></div>
+    <!-- Presence + mic status row -->
+    <div id="status-row">
+      <div id="presence-dot" title="Presence"></div>
+      <div id="mic-dot"      title="Microphone status"></div>
+    </div>
 
   </aside>
 
@@ -71,9 +74,25 @@
 
     <!-- Screen: Clock -->
     <div id="clock-screen" class="screen">
-      <div class="main-face">&#x25D5;&#x203F;&#x25D5;</div>
+      <div id="main-face" class="main-face">&#x25D5;&#x203F;&#x25D5;</div>
       <div id="time" class="main-time">--:--</div>
       <div id="date" class="main-date">Loading...</div>
+
+      <!-- Timer overlay (hidden when no timer) -->
+      <div id="timer-block" class="hidden">
+        <div id="timer-label" class="timer-label">Pomodoro</div>
+        <div id="timer-countdown" class="timer-countdown">25:00</div>
+        <div class="timer-bar-track">
+          <div id="timer-bar" class="timer-bar"></div>
+        </div>
+        <button class="timer-cancel-btn" onclick="cancelTimer()">Cancel</button>
+      </div>
+
+      <!-- Quick-start Pomodoro buttons (shown when no timer active) -->
+      <div id="timer-quick" class="timer-quick">
+        <button onclick="startTimer(25,'Pomodoro')">&#9201; 25 min</button>
+        <button onclick="startTimer(5,'Break')">&#9749; 5 min</button>
+      </div>
     </div>
 
     <!-- Screen: Weather -->

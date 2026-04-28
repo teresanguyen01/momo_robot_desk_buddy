@@ -49,6 +49,25 @@ html, body {
   color: #c4b5fd;
   filter: drop-shadow(0 0 6px #7c3aed55);
   line-height: 1;
+  transition: color 0.4s;
+}
+
+/* face expression colours */
+.sb-face[data-face="happy"]    { color: #34d399; filter: drop-shadow(0 0 6px #34d39955); }
+.sb-face[data-face="excited"]  { color: #fbbf24; filter: drop-shadow(0 0 8px #fbbf2455); }
+.sb-face[data-face="sad"]      { color: #60a5fa; filter: drop-shadow(0 0 6px #60a5fa55); }
+.sb-face[data-face="sleeping"] { color: #1e3a5f; filter: none; }
+.sb-face[data-face="timer"]    { color: #fb7185; filter: drop-shadow(0 0 8px #fb718555); }
+
+@keyframes face-blink {
+  0%, 94%, 100% { opacity: 1; }
+  96%, 98%      { opacity: 0; }
+}
+.sb-face { animation: face-blink 5s ease-in-out infinite; }
+.sb-face[data-face="sleeping"] { animation: sleeping-pulse 3s ease-in-out infinite; }
+@keyframes sleeping-pulse {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 0.7; }
 }
 
 .sb-name {
@@ -125,13 +144,32 @@ html, body {
   background: #0d0b1e;
 }
 
+/* status row: presence dot + mic dot side by side */
+#status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+/* presence dot */
+#presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0f1a2e;
+  transition: background 0.5s;
+}
+#presence-dot.present { background: #34d399; }
+#presence-dot.absent  { background: #1e3a5f; }
+
 /* mic status dot */
 #mic-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: #0f1a2e;
-  margin-top: 7px;
   transition: background 0.3s;
 }
 #mic-dot.listening { background: #22d3ee; animation: dot-pulse 1s ease-in-out infinite; }
@@ -180,7 +218,15 @@ html, body {
   color: #c4b5fd;
   filter: drop-shadow(0 0 8px #7c3aed44);
   line-height: 1;
+  transition: color 0.4s, filter 0.4s;
 }
+
+/* main face expression colours */
+.main-face[data-face="happy"]    { color: #34d399; filter: drop-shadow(0 0 10px #34d39955); }
+.main-face[data-face="excited"]  { color: #fbbf24; filter: drop-shadow(0 0 12px #fbbf2455); }
+.main-face[data-face="sad"]      { color: #60a5fa; filter: drop-shadow(0 0 8px #60a5fa55);  }
+.main-face[data-face="sleeping"] { color: #1e3a5f; filter: none; }
+.main-face[data-face="timer"]    { color: #fb7185; filter: drop-shadow(0 0 12px #fb718555); }
 
 .main-time {
   font-size: 60px;
@@ -196,6 +242,79 @@ html, body {
   color: #334155;
   letter-spacing: 1px;
 }
+
+/* ── Timer block (shown inside clock screen when timer is active) ────────── */
+#timer-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0 24px;
+}
+
+.timer-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #fb7185;
+  text-transform: uppercase;
+}
+
+.timer-countdown {
+  font-size: 42px;
+  font-weight: bold;
+  color: #fb7185;
+  letter-spacing: 2px;
+  text-shadow: 0 0 16px #fb718544;
+  line-height: 1;
+}
+
+.timer-bar-track {
+  width: 100%;
+  height: 4px;
+  background: #1a0a1e;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.timer-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #fb7185, #f43f5e);
+  border-radius: 2px;
+  transition: width 1s linear;
+}
+
+.timer-cancel-btn {
+  margin-top: 2px;
+  padding: 3px 12px;
+  background: transparent;
+  border: 1px solid #4c1d2e;
+  border-radius: 4px;
+  color: #fb7185;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.timer-cancel-btn:hover { background: #1a0a1e; }
+
+/* ── Timer quick-start buttons ──────────────────────────────────────────── */
+.timer-quick {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.timer-quick button {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid #0f1a2e;
+  border-radius: 6px;
+  color: #334155;
+  font-size: 10px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.timer-quick button:hover { color: #fb7185; border-color: #4c1d2e; }
 
 /* ── Weather screen ─────────────────────────────────────────────────────── */
 #weather-screen {

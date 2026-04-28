@@ -13,8 +13,19 @@ function fitScreen() {
 window.addEventListener("resize", fitScreen);
 fitScreen();
 
+// ── Face expressions ────────────────────────────────────────────────────────
+const FACES = {
+  idle:     "◕‿◕",
+  happy:    "◕ω◕",
+  excited:  "★‿★",
+  sad:      "◕︵◕",
+  sleeping: "－ω－",
+  timer:    "◑‿◑",
+};
+
 // ── State ───────────────────────────────────────────────────────────────────
 let prevVoiceState = null;
+let prevFace       = null;
 
 // ── Polling (every 1 s) ─────────────────────────────────────────────────────
 async function loadState() {
@@ -60,6 +71,12 @@ function renderState(state) {
   ws.dataset.feel = isNaN(temp) ? "mild"
     : temp < 45 ? "cold" : temp < 65 ? "mild" : temp < 82 ? "warm" : "hot";
 
+  // ── face expressions
+  updateFace(state.face || "idle");
+
+  // ── timer
+  updateTimer(state.timer);
+
   // ── tasks
   renderTasks(state.tasks);
 
@@ -68,7 +85,63 @@ function renderState(state) {
   updateBanner(state.voice_state);
   updateMicDot(state.voice_state);
 
+  // ── presence dot
+  updatePresence(state.presence);
+
   prevVoiceState = state.voice_state;
+}
+
+// ── Face update ─────────────────────────────────────────────────────────────
+function updateFace(face) {
+  if (face === prevFace) return;
+  prevFace = face;
+
+  const emoji = FACES[face] || FACES.idle;
+
+  const sbFace   = document.getElementById("sb-face");
+  const mainFace = document.getElementById("main-face");
+
+  sbFace.innerText      = emoji;
+  sbFace.dataset.face   = face;
+  mainFace.innerText    = emoji;
+  mainFace.dataset.face = face;
+
+  // Also update the voice banner face
+  document.getElementById("banner-face").innerText = emoji;
+}
+
+// ── Timer update ─────────────────────────────────────────────────────────────
+function updateTimer(timer) {
+  const block = document.getElementById("timer-block");
+  const quick = document.getElementById("timer-quick");
+
+  if (!timer || !timer.active) {
+    block.classList.add("hidden");
+    quick.classList.remove("hidden");
+    return;
+  }
+
+  block.classList.remove("hidden");
+  quick.classList.add("hidden");
+
+  const s   = timer.seconds_left;
+  const m   = Math.floor(s / 60);
+  const sec = s % 60;
+  document.getElementById("timer-label").innerText     = timer.label || "Timer";
+  document.getElementById("timer-countdown").innerText =
+    `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+
+  const pct = timer.total_seconds > 0
+    ? (timer.seconds_left / timer.total_seconds) * 100
+    : 0;
+  document.getElementById("timer-bar").style.width = pct + "%";
+}
+
+// ── Presence dot ─────────────────────────────────────────────────────────────
+function updatePresence(present) {
+  const dot = document.getElementById("presence-dot");
+  dot.className = present ? "present" : "absent";
+  dot.title     = present ? "Someone at desk" : "No one detected";
 }
 
 // ── Screen switching ────────────────────────────────────────────────────────
@@ -101,8 +174,25 @@ async function triggerWeather() {
   loadState();
 }
 
+// ── Timer controls ──────────────────────────────────────────────────────────
+async function startTimer(minutes, label) {
+  try {
+    await fetch("/api/timer/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minutes, label }),
+    });
+  } catch (e) { console.error("[momo] startTimer:", e); }
+  loadState();
+}
+
+async function cancelTimer() {
+  try { await fetch("/api/timer/cancel", { method: "POST" }); }
+  catch (e) { console.error("[momo] cancelTimer:", e); }
+  loadState();
+}
+
 // ── Voice banner ────────────────────────────────────────────────────────────
-const BANNER_FACES  = { listening: "◑‿◑", thinking: "⊙_⊙", speaking: "◕ω◕" };
 const BANNER_LABELS = { listening: "Listening...", thinking: "Thinking...", speaking: "Speaking..." };
 
 function updateBanner(vs) {
@@ -111,7 +201,6 @@ function updateBanner(vs) {
   banner.classList.toggle("visible", active);
   if (!active || vs === prevVoiceState) return;
 
-  document.getElementById("banner-face").innerText   = BANNER_FACES[vs]  || "◕‿◕";
   document.getElementById("banner-status").innerText = BANNER_LABELS[vs] || "";
 
   const anim = document.getElementById("banner-anim");
