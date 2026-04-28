@@ -1,68 +1,407 @@
-from flask import Flask, render_template, jsonify, request
-import time
-import requests
+"""
+Momo Desk Buddy — Flask backend
+Run: python app.py
+Set: export OPENAI_API_KEY=sk-...
+"""
 
+import os
+import json
+import time
+import threading
+import subprocess
+import requests
+from flask import Flask, render_template, jsonify, request
+
+# ── Optional imports (degrade gracefully if not installed) ─────────────────────
+try:
+    import speech_recognition as sr
+    SR_AVAILABLE = True
+except ImportError:
+    SR_AVAILABLE = False
+    print("[init] speech_recognition not installed — voice disabled")
+
+try:
+    from openai import OpenAI as _OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    print("[init] openai not installed — using keyword fallback")
+
+# ── Configuration ──────────────────────────────────────────────────────────────
+CITY             = "New Haven"
+TASKS_FILE       = os.path.join(os.path.dirname(__file__), "tasks.json")
+OPENAI_API_KEY   = os.environ.get("OPENAI_API_KEY", "")
+VOICE_ENABLED    = True   # set False to disable voice loop (useful for UI debugging)
+MIC_DEVICE_INDEX = None   # set to int (e.g. 1) if wrong mic is selected on Pi
+
+# ── Flask app ──────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 
+# ── Shared state + lock ────────────────────────────────────────────────────────
+# RULE: every read/write of `state` must happen inside `with state_lock`.
+# Blocking calls (network, subprocess, sleep) must happen OUTSIDE the lock.
+state_lock = threading.Lock()
+
 state = {
-    "screen": "clock",
-    "tasks": [
-        {"name": "Finish homework", "done": False},
-        {"name": "Work on Momo", "done": False},
-        {"name": "Check email", "done": False}
-    ],
+    "screen":      "clock",    # clock | weather | tasks   (shown when voice idle)
+    "voice_state": "idle",     # idle | listening | thinking | speaking
+    "last_spoken": "",
     "weather": {
-        "city": "New Haven",
-        "temp": "--",
-        "description": "Not loaded"
-    }
+        "city":        CITY,
+        "temp":        "--",
+        "description": "Not loaded",
+    },
+    "tasks": [],
 }
 
-def get_weather(city="New Haven"):
-    url = f"https://wttr.in/{city}?format=j1"
-    data = requests.get(url, timeout=10).json()
-    current = data["current_condition"][0]
+# ── Task persistence ───────────────────────────────────────────────────────────
+def load_tasks():
+    """Load tasks from disk. Returns defaults if file missing or corrupt."""
+    if os.path.exists(TASKS_FILE):
+        try:
+            with open(TASKS_FILE, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"[tasks] Could not load {TASKS_FILE}: {e}")
+    return [
+        {"id": 1, "name": "Finish homework", "done": False},
+        {"id": 2, "name": "Work on Momo",    "done": False},
+        {"id": 3, "name": "Check email",     "done": False},
+    ]
 
-    return {
-        "city": city,
-        "temp": current["temp_F"],
-        "description": current["weatherDesc"][0]["value"]
-    }
+def save_tasks(tasks):
+    """Write tasks to disk. Call while holding state_lock (file I/O is fast)."""
+    try:
+        with open(TASKS_FILE, "w") as f:
+            json.dump(tasks, f, indent=2)
+    except IOError as e:
+        print(f"[tasks] Save failed: {e}")
 
+def next_task_id(tasks):
+    """Return next available task id. Call while holding state_lock."""
+    return max((t["id"] for t in tasks), default=0) + 1
+
+# ── Weather ────────────────────────────────────────────────────────────────────
+def fetch_weather(city=CITY):
+    """Network call — must NOT be called while holding state_lock."""
+    try:
+        url  = f"https://wttr.in/{city}?format=j1"
+        data = requests.get(url, timeout=10).json()
+        cur  = data["current_condition"][0]
+        return {
+            "city":        city,
+            "temp":        cur["temp_F"],
+            "description": cur["weatherDesc"][0]["value"],
+        }
+    except Exception as e:
+        print(f"[weather] Error: {e}")
+        return {"city": city, "temp": "--", "description": "Unavailable"}
+
+# ── Speech output ──────────────────────────────────────────────────────────────
+def speak(text):
+    """
+    Blocking TTS via espeak piped to pw-play.
+    Must NOT be called while holding state_lock.
+    """
+    print(f"[speak] {text}")
+    safe = text.replace('"', "'").replace("`", "'").replace("\\", "")
+    subprocess.run(
+        f'espeak -a 200 -s 160 "{safe}" --stdout | pw-play',
+        shell=True
+    )
+
+# ── OpenAI command parser ──────────────────────────────────────────────────────
+_INTENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "intent": {
+            "type": "string",
+            "enum": [
+                "show_clock", "get_weather", "show_tasks",
+                "add_task", "complete_task", "remove_task", "unknown"
+            ],
+        },
+        "screen": {
+            "type": "string",
+            "enum": ["clock", "weather", "tasks"],
+        },
+        "task":             {"type": "string"},
+        "spoken_response":  {"type": "string"},
+    },
+    "required": ["intent", "screen", "task", "spoken_response"],
+    "additionalProperties": False,
+}
+
+def parse_command(text):
+    """
+    Ask OpenAI to parse a voice command into structured JSON.
+    Returns a dict, or None if unavailable/failed.
+    Network call — must NOT be called while holding state_lock.
+    """
+    if not OPENAI_API_KEY or not OPENAI_AVAILABLE:
+        print("[openai] Not configured — using keyword fallback")
+        return None
+    try:
+        client   = _OpenAI(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Momo, a cute Raspberry Pi desk robot assistant. "
+                        "Parse the user's voice command into exactly one intent. "
+                        "For add_task, put the task name in 'task'. "
+                        "For complete_task / remove_task, put the task name in 'task'. "
+                        "Set 'screen' to the best screen to show after the action. "
+                        "Keep spoken_response short, friendly, and under 15 words."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name":   "momo_action",
+                    "strict": True,
+                    "schema": _INTENT_SCHEMA,
+                },
+            },
+        )
+        result = json.loads(response.choices[0].message.content)
+        print(f"[openai] Parsed: {result}")
+        return result
+    except Exception as e:
+        print(f"[openai] Error: {e}")
+        return None
+
+def keyword_fallback(command):
+    """Simple keyword matching used when OpenAI is unavailable."""
+    cmd = command.lower()
+    if "weather" in cmd:
+        return {"intent": "get_weather",  "screen": "weather", "task": "",
+                "spoken_response": "Here is the weather."}
+    if "task" in cmd or "todo" in cmd or "list" in cmd:
+        return {"intent": "show_tasks",   "screen": "tasks",   "task": "",
+                "spoken_response": "Here are your tasks."}
+    if "clock" in cmd or "time" in cmd:
+        t = time.strftime("%I:%M %p")
+        return {"intent": "show_clock",   "screen": "clock",   "task": "",
+                "spoken_response": f"The time is {t}."}
+    return     {"intent": "unknown",       "screen": "clock",   "task": "",
+                "spoken_response": "Sorry, I did not understand that."}
+
+# ── Intent execution ───────────────────────────────────────────────────────────
+def execute_action(action):
+    """
+    Apply a parsed action to shared state.
+    Any network/blocking work is done BEFORE acquiring the lock.
+    """
+    intent    = action.get("intent",   "unknown")
+    screen    = action.get("screen",   "clock")
+    task_name = action.get("task",     "").strip()
+
+    # ── pre-fetch (outside lock) ───────────────────────────────────────────────
+    new_weather = None
+    if intent == "get_weather":
+        new_weather = fetch_weather()          # network call before lock
+
+    # ── mutate state (inside lock) ─────────────────────────────────────────────
+    with state_lock:
+        if intent == "get_weather" and new_weather:
+            state["weather"] = new_weather
+            state["screen"]  = "weather"
+
+        elif intent == "add_task" and task_name:
+            task = {
+                "id":   next_task_id(state["tasks"]),
+                "name": task_name,
+                "done": False,
+            }
+            state["tasks"].append(task)
+            save_tasks(state["tasks"])
+            state["screen"] = "tasks"
+
+        elif intent == "complete_task" and task_name:
+            for t in state["tasks"]:
+                if task_name.lower() in t["name"].lower():
+                    t["done"] = True
+            save_tasks(state["tasks"])
+            state["screen"] = "tasks"
+
+        elif intent == "remove_task" and task_name:
+            state["tasks"] = [
+                t for t in state["tasks"]
+                if task_name.lower() not in t["name"].lower()
+            ]
+            save_tasks(state["tasks"])
+            state["screen"] = "tasks"
+
+        else:
+            state["screen"] = screen
+
+# ── Voice loop (background thread) ────────────────────────────────────────────
+def voice_loop():
+    """
+    Runs forever in a daemon thread.
+    Cycle: LISTENING → [timeout → IDLE] / [heard → THINKING → SPEAKING → IDLE]
+
+    Lock discipline:
+      - Acquire lock only to read/write `state`.
+      - Release lock before any blocking call (network, subprocess, listen).
+    """
+    recognizer = sr.Recognizer()
+    recognizer.dynamic_energy_threshold = True
+    print("[voice] Voice loop running")
+
+    while True:
+        # ── 1. LISTENING ──────────────────────────────────────────────────────
+        with state_lock:
+            state["voice_state"] = "listening"
+
+        try:
+            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                try:
+                    audio = recognizer.listen(source, timeout=4, phrase_time_limit=7)
+                except sr.WaitTimeoutError:
+                    # Nothing heard — return to idle and pause before next cycle
+                    with state_lock:
+                        state["voice_state"] = "idle"
+                    time.sleep(2)
+                    continue
+
+        except OSError as e:
+            print(f"[voice] Microphone error: {e}")
+            with state_lock:
+                state["voice_state"] = "idle"
+            time.sleep(5)
+            continue
+
+        # ── Transcribe audio ───────────────────────────────────────────────────
+        try:
+            command = recognizer.recognize_google(audio)
+            print(f"[voice] Heard: '{command}'")
+        except sr.UnknownValueError:
+            print("[voice] Could not understand audio")
+            with state_lock:
+                state["voice_state"] = "idle"
+            time.sleep(1)
+            continue
+        except sr.RequestError as e:
+            print(f"[voice] STT network error: {e}")
+            with state_lock:
+                state["voice_state"] = "idle"
+            time.sleep(3)
+            continue
+
+        # ── 2. THINKING ───────────────────────────────────────────────────────
+        with state_lock:
+            state["voice_state"] = "thinking"
+
+        action = parse_command(command) or keyword_fallback(command)
+        execute_action(action)   # may do network + state mutation
+
+        # ── 3. SPEAKING ───────────────────────────────────────────────────────
+        spoken = action.get("spoken_response", "Okay.")
+        with state_lock:
+            state["voice_state"] = "speaking"
+            state["last_spoken"] = spoken
+
+        speak(spoken)   # blocking subprocess, outside lock
+
+        # ── 4. IDLE (brief pause before next listen) ──────────────────────────
+        with state_lock:
+            state["voice_state"] = "idle"
+        time.sleep(1)
+
+# ── Flask routes ───────────────────────────────────────────────────────────────
 @app.route("/")
 def home():
     return render_template("index.html")
 
 @app.route("/api/state")
 def api_state():
-    state["time"] = time.strftime("%I:%M %p")
-    state["date"] = time.strftime("%A, %B %d")
-    return jsonify(state)
+    with state_lock:
+        snapshot = {
+            "screen":      state["screen"],
+            "voice_state": state["voice_state"],
+            "last_spoken": state["last_spoken"],
+            "weather":     dict(state["weather"]),
+            "tasks":       list(state["tasks"]),
+            "time":        time.strftime("%I:%M %p"),
+            "date":        time.strftime("%A, %B %d"),
+        }
+    return jsonify(snapshot)
 
 @app.route("/api/screen", methods=["POST"])
-def set_screen():
-    data = request.json
-    state["screen"] = data.get("screen", "clock")
+def api_set_screen():
+    data   = request.json or {}
+    screen = data.get("screen", "clock")
+    with state_lock:
+        state["screen"] = screen
     return jsonify({"ok": True})
 
 @app.route("/api/weather", methods=["POST"])
-def update_weather():
-    state["weather"] = get_weather("New Haven")
-    state["screen"] = "weather"
-    return jsonify(state["weather"])
+def api_weather():
+    weather = fetch_weather()              # network call outside lock
+    with state_lock:
+        state["weather"] = weather
+        state["screen"]  = "weather"
+    return jsonify(weather)
+
+@app.route("/api/task/add", methods=["POST"])
+def api_task_add():
+    data = request.json or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Name required"}), 400
+    with state_lock:
+        task = {"id": next_task_id(state["tasks"]), "name": name, "done": False}
+        state["tasks"].append(task)
+        save_tasks(state["tasks"])
+    return jsonify({"ok": True, "task": task})
 
 @app.route("/api/task/complete", methods=["POST"])
-def complete_task():
-    data = request.json
-    task_name = data.get("task", "").lower()
+def api_task_complete():
+    data    = request.json or {}
+    task_id = data.get("id")
+    with state_lock:
+        for t in state["tasks"]:
+            if t["id"] == task_id:
+                t["done"] = True
+                save_tasks(state["tasks"])
+                return jsonify({"ok": True, "task": t})
+    return jsonify({"ok": False, "error": "Task not found"}), 404
 
-    for task in state["tasks"]:
-        if task_name in task["name"].lower():
-            task["done"] = True
-            state["screen"] = "tasks"
-            return jsonify({"ok": True, "task": task})
+@app.route("/api/task/remove", methods=["POST"])
+def api_task_remove():
+    data    = request.json or {}
+    task_id = data.get("id")
+    with state_lock:
+        state["tasks"] = [t for t in state["tasks"] if t["id"] != task_id]
+        save_tasks(state["tasks"])
+    return jsonify({"ok": True})
 
-    return jsonify({"ok": False, "error": "Task not found"})
-
+# ── Startup ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    with state_lock:
+        state["tasks"] = load_tasks()
+    print(f"[init] Loaded {len(state['tasks'])} task(s)")
+    print(f"[init] OpenAI: {'configured' if OPENAI_API_KEY else 'NOT SET — using keyword fallback'}")
+    print(f"[init] City:   {CITY}")
+
+    if VOICE_ENABLED and SR_AVAILABLE:
+        t = threading.Thread(target=voice_loop, daemon=True, name="VoiceLoop")
+        t.start()
+        print("[init] Voice thread started")
+    elif VOICE_ENABLED and not SR_AVAILABLE:
+        print("[init] Voice disabled: speech_recognition not installed")
+    else:
+        print("[init] Voice disabled by config (VOICE_ENABLED=False)")
+
+    print("[init] Starting Flask → http://0.0.0.0:5000")
+    # debug=False is required: debug mode's reloader forks the process,
+    # which would start the voice thread twice.
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
