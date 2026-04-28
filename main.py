@@ -1,17 +1,14 @@
 import time
-import pyttsx3
 import pygame
 
 from ui import draw_clock, draw_weather, draw_message
 from weather import get_weather
 
-engine = pyttsx3.init()
-engine.setProperty("rate", 160)
+import subprocess
 
 def speak(text):
     print("Robot:", text)
-    engine.say(text)
-    engine.runAndWait()
+    subprocess.run(["espeak", "-a", "200", "-s", "160", text])
 
 def handle_command(command):
     command = command.lower().strip()
