@@ -167,6 +167,7 @@ state = {
     },
     "reminders": [],    # [{"id": int, "text": str, "fire_at": float, "fired": bool}]
     "presence":  True,  # True = someone detected at desk
+    "sleep_mode": False, # True = Momo is asleep, only wakes on wake command
 }
 
 # ── Task persistence ───────────────────────────────────────────────────────────
@@ -726,6 +727,28 @@ def camera_thread():
     except Exception as e:
         print(f"[camera] Error: {e}")
 
+# ── Sleep / wake helpers ───────────────────────────────────────────────────────
+_SLEEP_KEYWORDS = {
+    "go to sleep", "sleep", "turn off", "shut down", "shutdown",
+    "don't need you", "i don't need you", "leave me alone",
+    "go away", "goodbye", "bye", "that's all", "that's it",
+    "i'm done", "im done", "you can go", "go rest",
+}
+
+_WAKE_KEYWORDS = {
+    "wake up", "turn on", "i need you", "come back",
+    "hello", "hey", "good morning", "good afternoon",
+    "good evening", "are you there", "start", "activate",
+}
+
+def _is_sleep_command(text):
+    t = text.lower().strip()
+    return any(kw in t for kw in _SLEEP_KEYWORDS)
+
+def _is_wake_command(text):
+    t = text.lower().strip()
+    return any(kw in t for kw in _WAKE_KEYWORDS)
+
 # ── Voice loop ─────────────────────────────────────────────────────────────────
 WAKE_WORD = "momo"
 
@@ -767,6 +790,25 @@ def voice_loop():
         print(f"[voice] Wake word: '{heard}'")
         after_wake = heard.split(WAKE_WORD, 1)[-1].strip()
 
+        # ── Read sleep_mode once outside the hot path ──────────────────────
+        with state_lock:
+            currently_sleeping = state["sleep_mode"]
+
+        # ══ Sleep mode: only accept wake commands ═════════════════════════
+        if currently_sleeping:
+            # If the phrase after "momo" is a wake command, wake up
+            if after_wake and _is_wake_command(after_wake):
+                with state_lock:
+                    state["sleep_mode"] = False
+                    state["face"]       = "happy"
+                speak("I'm back! What do you need?")
+                with state_lock:
+                    state["face"] = "idle"
+            else:
+                # Still asleep — say nothing, ignore command
+                print("[voice] Sleeping — ignoring command")
+            continue
+
         # ══ Phase 2: active command cycle ════════════════════════════════════
         if not after_wake:
             speak("Yeah?")
@@ -788,6 +830,16 @@ def voice_loop():
                 continue
 
         command = after_wake
+
+        # ── Check for sleep command before processing normally ─────────────
+        if _is_sleep_command(command):
+            with state_lock:
+                state["sleep_mode"] = True
+                state["face"]       = "sleeping"
+            speak("Okay, going to sleep! Say momo wake up when you need me.")
+            with state_lock:
+                state["voice_state"] = "idle"
+            continue
 
         with state_lock:
             state["voice_state"] = "thinking"
@@ -832,6 +884,7 @@ def api_state():
             "tasks":       list(state["tasks"]),
             "timer":       dict(state["timer"]),
             "presence":    state["presence"],
+            "sleep_mode":  state["sleep_mode"],
             "time":        time.strftime("%I:%M %p"),
             "date":        time.strftime("%A, %B %d"),
         }
