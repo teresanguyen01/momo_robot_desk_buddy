@@ -5,7 +5,8 @@ WIDTH = 480
 HEIGHT = 320
 
 pygame.init()
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
+screen = pygame.display.set_mode((480, 320), pygame.FULLSCREEN)
+pygame.mouse.set_visible(False)
 pygame.display.set_caption("DeskBuddy")
 
 font_big = pygame.font.SysFont(None, 72)
