@@ -242,68 +242,109 @@ def execute_action(action):
             state["screen"] = screen
 
 # ── Voice loop (background thread) ────────────────────────────────────────────
+WAKE_WORD = "momo"
+
+def _listen_once(recognizer, source, timeout, phrase_limit):
+    """
+    Block until speech is heard or timeout expires.
+    Returns transcribed string, or None on silence/error.
+    Caller must open the Microphone context.
+    """
+    try:
+        audio = recognizer.listen(source, timeout=timeout,
+                                  phrase_time_limit=phrase_limit)
+    except sr.WaitTimeoutError:
+        return None
+
+    try:
+        return recognizer.recognize_google(audio).lower()
+    except sr.UnknownValueError:
+        return None
+    except sr.RequestError as e:
+        print(f"[voice] STT network error: {e}")
+        return None
+
 def voice_loop():
     """
     Runs forever in a daemon thread.
-    Cycle: LISTENING → [timeout → IDLE] / [heard → THINKING → SPEAKING → IDLE]
+
+    Two-phase design:
+      Phase 1 — PASSIVE: listen silently for the wake word "momo".
+                Screen stays on whatever it currently shows (idle).
+      Phase 2 — ACTIVE:  wake word heard → show listening screen →
+                listen for command → think → speak → idle.
 
     Lock discipline:
-      - Acquire lock only to read/write `state`.
-      - Release lock before any blocking call (network, subprocess, listen).
+      - Acquire state_lock only to read/write `state`.
+      - Release before every blocking call (network, subprocess, listen).
     """
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = True
-    print("[voice] Voice loop running")
+    print(f"[voice] Voice loop running — wake word: '{WAKE_WORD}'")
 
     while True:
-        # ── 1. LISTENING ──────────────────────────────────────────────────────
-        with state_lock:
-            state["voice_state"] = "listening"
-
+        # ── Phase 1: PASSIVE wake-word detection ──────────────────────────────
+        # voice_state stays "idle"; screen is unchanged.
         try:
             with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
                 recognizer.adjust_for_ambient_noise(source, duration=0.3)
-                try:
-                    audio = recognizer.listen(source, timeout=4, phrase_time_limit=7)
-                except sr.WaitTimeoutError:
-                    # Nothing heard — return to idle and pause before next cycle
-                    with state_lock:
-                        state["voice_state"] = "idle"
-                    time.sleep(2)
-                    continue
-
+                heard = _listen_once(recognizer, source,
+                                     timeout=5, phrase_limit=4)
         except OSError as e:
             print(f"[voice] Microphone error: {e}")
-            with state_lock:
-                state["voice_state"] = "idle"
             time.sleep(5)
             continue
 
-        # ── Transcribe audio ───────────────────────────────────────────────────
-        try:
-            command = recognizer.recognize_google(audio)
-            print(f"[voice] Heard: '{command}'")
-        except sr.UnknownValueError:
-            print("[voice] Could not understand audio")
-            with state_lock:
-                state["voice_state"] = "idle"
-            time.sleep(1)
-            continue
-        except sr.RequestError as e:
-            print(f"[voice] STT network error: {e}")
-            with state_lock:
-                state["voice_state"] = "idle"
-            time.sleep(3)
+        if not heard or WAKE_WORD not in heard:
+            # Nothing heard or wake word absent — stay passive
             continue
 
-        # ── 2. THINKING ───────────────────────────────────────────────────────
+        print(f"[voice] Wake word detected in: '{heard}'")
+
+        # Check if the command was bundled with the wake word
+        # e.g. "momo what's the weather" → strip wake word and use the rest
+        after_wake = heard.split(WAKE_WORD, 1)[-1].strip()
+
+        # ── Phase 2a: LISTENING (wake word heard, wait for command) ───────────
+        with state_lock:
+            state["voice_state"] = "listening"
+
+        command = None
+
+        if after_wake:
+            # Command came in the same utterance as the wake word
+            print(f"[voice] Inline command: '{after_wake}'")
+            command = after_wake
+        else:
+            # Wake word only — listen for a follow-up utterance
+            speak("Yeah?")   # short acknowledgement, blocking but outside lock
+            try:
+                with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
+                    recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                    command = _listen_once(recognizer, source,
+                                          timeout=5, phrase_limit=7)
+            except OSError as e:
+                print(f"[voice] Microphone error: {e}")
+                with state_lock:
+                    state["voice_state"] = "idle"
+                continue
+
+            if not command:
+                print("[voice] No follow-up command heard")
+                with state_lock:
+                    state["voice_state"] = "idle"
+                continue
+
+            print(f"[voice] Follow-up command: '{command}'")
+
+        # ── Phase 2b: THINKING ────────────────────────────────────────────────
         with state_lock:
             state["voice_state"] = "thinking"
 
         action = parse_command(command) or keyword_fallback(command)
-        execute_action(action)   # may do network + state mutation
+        execute_action(action)   # may do network + state mutation (outside lock)
 
-        # ── 3. SPEAKING ───────────────────────────────────────────────────────
+        # ── Phase 2c: SPEAKING ────────────────────────────────────────────────
         spoken = action.get("spoken_response", "Okay.")
         with state_lock:
             state["voice_state"] = "speaking"
@@ -311,10 +352,10 @@ def voice_loop():
 
         speak(spoken)   # blocking subprocess, outside lock
 
-        # ── 4. IDLE (brief pause before next listen) ──────────────────────────
+        # ── Back to passive ───────────────────────────────────────────────────
         with state_lock:
             state["voice_state"] = "idle"
-        time.sleep(1)
+        time.sleep(0.5)   # brief pause before passive listen resumes
 
 # ── Flask routes ───────────────────────────────────────────────────────────────
 @app.route("/")
