@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Momo Desk Buddy</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="clock-screen" class="screen">
+        <div class="face">◕‿◕</div>
+        <div id="time" class="time">--:--</div>
+        <div id="date" class="date">Loading...</div>
+      </div>
+
+      <div id="weather-screen" class="screen hidden">
+        <div class="title">Weather</div>
+        <div id="weather-temp" class="big">--°F</div>
+        <div id="weather-desc" class="subtitle">Loading...</div>
+        <div id="weather-city" class="small">New Haven</div>
+      </div>
+
+      <div id="tasks-screen" class="screen hidden">
+        <div class="title">Today's Tasks</div>
+        <div id="tasks"></div>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button onclick="setScreen('clock')">Clock</button>
+      <button onclick="getWeather()">Weather</button>
+      <button onclick="setScreen('tasks')">Tasks</button>
+    </div>
+
+    <script src="/static/script.js"></script>
+  </body>
+</html>

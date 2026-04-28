@@ -1,0 +1,75 @@
+body {
+  margin: 0;
+  background: #111827;
+  color: white;
+  font-family: Arial, sans-serif;
+  overflow: hidden;
+}
+
+.screen {
+  width: 480px;
+  height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.hidden {
+  display: none;
+}
+
+.face {
+  font-size: 58px;
+  margin-bottom: 10px;
+}
+
+.time {
+  font-size: 64px;
+  font-weight: bold;
+}
+
+.date {
+  font-size: 22px;
+  color: #cbd5e1;
+}
+
+.title {
+  font-size: 34px;
+  margin-bottom: 20px;
+}
+
+.big {
+  font-size: 70px;
+  font-weight: bold;
+}
+
+.subtitle {
+  font-size: 26px;
+}
+
+.small {
+  font-size: 18px;
+  color: #cbd5e1;
+  margin-top: 10px;
+}
+
+.task {
+  font-size: 24px;
+  margin: 8px;
+}
+
+.done {
+  text-decoration: line-through;
+  color: #86efac;
+}
+
+.buttons {
+  position: absolute;
+  bottom: 5px;
+  left: 5px;
+}
+
+button {
+  font-size: 12px;
+}
