@@ -102,7 +102,7 @@ def fetch_weather(city=CITY):
 # Voice character — swap to any en-US-*Neural name from:
 # https://speech.microsoft.com/portal (free preview in browser)
 # Good options: JennyNeural (warm), AriaNeural (natural), SaraNeural (friendly)
-VOICE = "en-US-JennyNeural"
+VOICE = "en-US-AnaNeural"
 
 async def _edge_tts(text, path):
     """Generate speech MP3 via edge-tts (Microsoft neural TTS, free)."""
