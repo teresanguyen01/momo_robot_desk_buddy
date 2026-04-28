@@ -44,8 +44,12 @@ def main():
     while running:
         draw_clock()
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
                 running = False
 
         command = input("Type a command: ")
