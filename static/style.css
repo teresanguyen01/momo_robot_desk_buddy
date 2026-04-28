@@ -1,10 +1,12 @@
 /* ── Reset ──────────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ── Base — locked to 480×320 kiosk ────────────────────────────────────────── */
+/* ── Base — adapts to whatever Chromium reports as the viewport ─────────────── */
 html, body {
-  width: 480px;
-  height: 320px;
+  width: 100vw;
+  height: 100vh;
+  max-width: 480px;
+  max-height: 320px;
   overflow: hidden;
   background: #080c14;
   color: #e2e8f0;
@@ -13,22 +15,29 @@ html, body {
   -webkit-user-select: none;
 }
 
-/* ── App + screens ──────────────────────────────────────────────────────────── */
-#app { width: 480px; height: 285px; }
+/* ── Nav is 35px; everything else fills the rest ────────────────────────────── */
+:root { --nav-h: 35px; --banner-h: 62px; }
+
+#app {
+  width: 100vw;
+  height: calc(100vh - var(--nav-h));
+  overflow: hidden;
+}
 
 .screen {
-  width: 480px;
-  height: 285px;
+  width: 100vw;
+  height: calc(100vh - var(--nav-h));
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 .hidden { display: none !important; }
 
 .screen-label {
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 2px;
   text-transform: uppercase;
   color: #334155;
@@ -38,8 +47,8 @@ html, body {
 nav {
   position: fixed;
   bottom: 0; left: 0;
-  width: 480px;
-  height: 35px;
+  width: 100vw;
+  height: var(--nav-h);
   background: #080c14;
   border-top: 1px solid #0f1a2e;
   display: flex;
@@ -52,7 +61,7 @@ nav button {
   border: none;
   border-right: 1px solid #0f1a2e;
   color: #1e3a5f;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   transition: color 0.2s;
 }
@@ -66,29 +75,28 @@ nav button.active { color: #7c3aed; font-weight: bold; }
 
 #clock-screen {
   background: radial-gradient(ellipse at 50% 40%, #0d1f3c 0%, #080c14 70%);
+  gap: 4px;
 }
 
 .clock-face {
-  font-size: 46px;
+  font-size: 40px;
   line-height: 1;
-  margin-bottom: 4px;
   color: #c4b5fd;
-  filter: drop-shadow(0 0 8px #7c3aed66);
+  filter: drop-shadow(0 0 6px #7c3aed55);
 }
 
 .clock-time {
-  font-size: 76px;
+  font-size: 62px;
   font-weight: bold;
-  letter-spacing: 3px;
+  letter-spacing: 2px;
   color: #22d3ee;
   line-height: 1;
-  text-shadow: 0 0 20px #0891b255;
+  text-shadow: 0 0 18px #0891b244;
 }
 
 .clock-date {
-  font-size: 18px;
+  font-size: 16px;
   color: #334155;
-  margin-top: 8px;
   letter-spacing: 1px;
 }
 
@@ -100,39 +108,22 @@ nav button.active { color: #7c3aed; font-weight: bold; }
   gap: 2px;
 }
 
-.weather-icon {
-  font-size: 44px;
-  line-height: 1;
-  margin-bottom: 2px;
-}
+.weather-icon { font-size: 36px; line-height: 1; }
 
 .weather-temp {
-  font-size: 80px;
+  font-size: 68px;
   font-weight: bold;
   line-height: 1;
   color: #f1f5f9;
-  text-shadow: 0 0 16px #ffffff22;
 }
 
-/* JS sets data-feel="cold|mild|warm|hot" on #weather-screen */
-#weather-screen[data-feel="cold"]  .weather-temp { color: #93c5fd; text-shadow: 0 0 16px #3b82f655; }
-#weather-screen[data-feel="mild"]  .weather-temp { color: #6ee7b7; text-shadow: 0 0 16px #10b98155; }
-#weather-screen[data-feel="warm"]  .weather-temp { color: #fde68a; text-shadow: 0 0 16px #f59e0b55; }
-#weather-screen[data-feel="hot"]   .weather-temp { color: #fca5a5; text-shadow: 0 0 16px #ef444455; }
+#weather-screen[data-feel="cold"] .weather-temp { color: #93c5fd; text-shadow: 0 0 14px #3b82f644; }
+#weather-screen[data-feel="mild"] .weather-temp { color: #6ee7b7; text-shadow: 0 0 14px #10b98144; }
+#weather-screen[data-feel="warm"] .weather-temp { color: #fde68a; text-shadow: 0 0 14px #f59e0b44; }
+#weather-screen[data-feel="hot"]  .weather-temp { color: #fca5a5; text-shadow: 0 0 14px #ef444444; }
 
-.weather-desc {
-  font-size: 20px;
-  color: #94a3b8;
-  margin-top: 4px;
-}
-
-.weather-city {
-  font-size: 14px;
-  color: #1e3a5f;
-  margin-top: 3px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
+.weather-desc { font-size: 18px; color: #94a3b8; }
+.weather-city { font-size: 12px; color: #1e3a5f; letter-spacing: 1px; text-transform: uppercase; }
 
 /* ════════════════════════════════════════════════════════════════════════════ */
 /* ── Tasks screen ────────────────────────────────────────────────────────── */
@@ -140,7 +131,7 @@ nav button.active { color: #7c3aed; font-weight: bold; }
 #tasks-screen {
   justify-content: flex-start;
   align-items: stretch;
-  padding: 8px 14px 0;
+  padding: 8px 12px 0;
   background: #080c14;
 }
 
@@ -148,16 +139,17 @@ nav button.active { color: #7c3aed; font-weight: bold; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
+  flex-shrink: 0;
 }
 
 .tasks-progress {
-  font-size: 11px;
+  font-size: 10px;
   color: #7c3aed;
   background: #1a0a3e;
   border: 1px solid #4c1d95;
   border-radius: 20px;
-  padding: 2px 8px;
+  padding: 2px 7px;
   letter-spacing: 1px;
 }
 
@@ -165,22 +157,20 @@ nav button.active { color: #7c3aed; font-weight: bold; }
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  min-height: 0;         /* lets flex child shrink below content size */
 }
 
 #tasks-list::-webkit-scrollbar { width: 3px; }
-#tasks-list::-webkit-scrollbar-track { background: transparent; }
 #tasks-list::-webkit-scrollbar-thumb { background: #1a2338; border-radius: 2px; }
 
-/* accent colors cycle through 4 values via data-color attribute set in JS */
 .task-item {
   display: flex;
   align-items: center;
-  padding: 7px 4px;
+  padding: 6px 4px 6px 8px;
   border-bottom: 1px solid #0f1623;
-  font-size: 17px;
-  cursor: pointer;
   border-left: 3px solid transparent;
-  padding-left: 8px;
+  font-size: 15px;
+  cursor: pointer;
   transition: background 0.15s;
 }
 
@@ -192,16 +182,16 @@ nav button.active { color: #7c3aed; font-weight: bold; }
 .task-item[data-color="3"] { border-left-color: #fbbf24; }
 
 .task-check {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border: 2px solid #1e3a5f;
-  border-radius: 6px;
-  margin-right: 10px;
+  border-radius: 5px;
+  margin-right: 9px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12px;
   color: #34d399;
 }
 
@@ -209,7 +199,6 @@ nav button.active { color: #7c3aed; font-weight: bold; }
 .task-item[data-color="1"] .task-check { border-color: #065f46; }
 .task-item[data-color="2"] .task-check { border-color: #9f1239; }
 .task-item[data-color="3"] .task-check { border-color: #92400e; }
-
 .task-item.done .task-check { background: #052e16; border-color: #34d399 !important; }
 
 .task-name {
@@ -220,88 +209,69 @@ nav button.active { color: #7c3aed; font-weight: bold; }
   color: #cbd5e1;
 }
 
-.task-item.done .task-name {
-  text-decoration: line-through;
-  color: #1e3a5f;
-}
+.task-item.done .task-name { text-decoration: line-through; color: #1e3a5f; }
 
 .task-remove {
   color: #0f1a2e;
-  font-size: 14px;
-  padding: 2px 6px;
+  font-size: 13px;
+  padding: 2px 5px;
   border-radius: 4px;
   cursor: pointer;
   transition: color 0.15s;
 }
-
 .task-remove:hover { color: #fb7185; }
 
-.tasks-empty {
-  text-align: center;
-  color: #1e3a5f;
-  font-size: 15px;
-  padding: 28px 0;
-}
+.tasks-empty { text-align: center; color: #1e3a5f; font-size: 14px; padding: 20px 0; }
 
 .add-btn {
   width: 100%;
-  padding: 7px;
-  margin-top: 6px;
+  padding: 6px;
+  margin-top: 5px;
   background: transparent;
   color: #1e3a5f;
   border: 1px solid #0f1a2e;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 7px;
+  font-size: 13px;
   cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
   flex-shrink: 0;
+  transition: color 0.2s, border-color 0.2s;
 }
-
 .add-btn:hover { color: #a78bfa; border-color: #4c1d95; }
 
 /* ════════════════════════════════════════════════════════════════════════════ */
 /* ── Voice banner ────────────────────────────────────────────────────────── */
-/*    Slides up above the nav bar when Momo is active.                        */
-/*    The main screen content remains fully visible underneath.               */
 
 #voice-banner {
   position: fixed;
-  bottom: 35px; left: 0;
-  width: 480px;
-  height: 64px;
+  bottom: var(--nav-h);
+  left: 0;
+  width: 100vw;
+  height: var(--banner-h);
   background: linear-gradient(135deg, #0d0b1e 0%, #120828 100%);
   border-top: 1.5px solid #4c1d95;
   display: flex;
   align-items: center;
-  padding: 0 18px;
-  gap: 14px;
+  padding: 0 16px;
+  gap: 12px;
   z-index: 50;
-
-  /* hidden by default — slides up when .visible is added */
   transform: translateY(100%);
-  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-#voice-banner.visible {
-  transform: translateY(0);
-}
+#voice-banner.visible { transform: translateY(0); }
 
-.banner-face {
-  font-size: 30px;
-  flex-shrink: 0;
-  color: #c4b5fd;
-}
+.banner-face   { font-size: 28px; flex-shrink: 0; color: #c4b5fd; }
+.banner-status { font-size: 16px; color: #94a3b8; letter-spacing: 0.5px; flex: 1; }
 
-/* animation area */
 .banner-anim {
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 32px;
+  gap: 4px;
+  height: 28px;
   flex-shrink: 0;
 }
 
-/* default: speaking bars */
+/* speaking bars (default) */
 .banner-anim span {
   display: block;
   width: 5px;
@@ -310,34 +280,31 @@ nav button.active { color: #7c3aed; font-weight: bold; }
   animation: bar-grow 0.5s ease-in-out infinite alternate;
 }
 
-.banner-anim span:nth-child(1) { height: 8px;  animation-delay: 0s;    }
-.banner-anim span:nth-child(2) { height: 20px; animation-delay: 0.15s; }
-.banner-anim span:nth-child(3) { height: 12px; animation-delay: 0.3s;  }
+.banner-anim span:nth-child(1) { height: 7px;  animation-delay: 0s;    }
+.banner-anim span:nth-child(2) { height: 18px; animation-delay: 0.15s; }
+.banner-anim span:nth-child(3) { height: 11px; animation-delay: 0.3s;  }
 
-@keyframes bar-grow { to { height: 28px; } }
+@keyframes bar-grow { to { height: 26px; } }
 
-/* listening: pulsing dots */
+/* listening dots */
 .banner-anim.listening span {
-  width: 8px;
-  height: 8px;
+  width: 7px; height: 7px;
   border-radius: 50%;
   background: #22d3ee;
   animation: dot-pulse 1s ease-in-out infinite;
 }
-
-.banner-anim.listening span:nth-child(1) { animation-delay: 0s;    }
-.banner-anim.listening span:nth-child(2) { animation-delay: 0.2s;  }
-.banner-anim.listening span:nth-child(3) { animation-delay: 0.4s;  }
+.banner-anim.listening span:nth-child(1) { animation-delay: 0s;   }
+.banner-anim.listening span:nth-child(2) { animation-delay: 0.2s; }
+.banner-anim.listening span:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes dot-pulse {
   0%, 100% { opacity: 0.2; transform: scale(0.75); }
   50%       { opacity: 1;   transform: scale(1.2);  }
 }
 
-/* thinking: spinner replaces spans (set via JS innerHTML) */
+/* thinking spinner */
 .spinner {
-  width: 24px;
-  height: 24px;
+  width: 22px; height: 22px;
   border: 3px solid #1a0a3e;
   border-top-color: #a78bfa;
   border-radius: 50%;
@@ -346,20 +313,13 @@ nav button.active { color: #7c3aed; font-weight: bold; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.banner-status {
-  font-size: 18px;
-  color: #94a3b8;
-  letter-spacing: 0.5px;
-  flex: 1;
-}
-
 /* ════════════════════════════════════════════════════════════════════════════ */
-/* ── Add-task modal ──────────────────────────────────────────────────────── */
+/* ── Modal ───────────────────────────────────────────────────────────────── */
 
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0,0,0,0.82);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -369,51 +329,46 @@ nav button.active { color: #7c3aed; font-weight: bold; }
 .modal-box {
   background: #0d1623;
   border: 1px solid #1e3a5f;
-  border-radius: 14px;
-  padding: 22px;
-  width: 360px;
-  box-shadow: 0 0 40px #7c3aed33;
+  border-radius: 12px;
+  padding: 18px;
+  width: 340px;
+  box-shadow: 0 0 36px #7c3aed22;
 }
 
 .modal-title {
-  font-size: 16px;
+  font-size: 14px;
   color: #a78bfa;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   letter-spacing: 2px;
   text-transform: uppercase;
 }
 
 .modal-box input {
   width: 100%;
-  padding: 10px 12px;
-  font-size: 17px;
+  padding: 9px 11px;
+  font-size: 16px;
   background: #080c14;
   color: #f1f5f9;
   border: 1px solid #1e3a5f;
-  border-radius: 8px;
+  border-radius: 7px;
   outline: none;
   transition: border-color 0.2s;
 }
-
 .modal-box input:focus { border-color: #7c3aed; }
 
-.modal-buttons {
-  display: flex;
-  gap: 10px;
-  margin-top: 14px;
-}
+.modal-buttons { display: flex; gap: 9px; margin-top: 12px; }
 
 .modal-buttons button {
   flex: 1;
-  padding: 10px;
-  font-size: 15px;
+  padding: 9px;
+  font-size: 14px;
   border: none;
-  border-radius: 8px;
+  border-radius: 7px;
   cursor: pointer;
   font-weight: bold;
   transition: opacity 0.15s;
 }
-
 .modal-buttons button:hover { opacity: 0.85; }
+
 .btn-confirm { background: #7c3aed; color: #f5f3ff; }
 .btn-cancel  { background: #0f1623; color: #475569; border: 1px solid #1e3a5f; }

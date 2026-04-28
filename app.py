@@ -298,6 +298,14 @@ def voice_loop():
     recognizer.dynamic_energy_threshold = True
     print(f"[voice] Ready — say '{WAKE_WORD} <command>' to activate")
 
+    # Startup greeting — small delay lets Flask finish initializing first
+    time.sleep(1.5)
+    speak(
+        "Hi! I'm Momo, your personal desk buddy robot. "
+        "I can give you the time, weather, and tasks. "
+        "Say momo and then ask me your question!"
+    )
+
     while True:
         # ══ Phase 1: silent passive listening ════════════════════════════════
         # voice_state = "idle" throughout; screen is NOT touched here.
