@@ -189,20 +189,50 @@ def parse_command(text):
         return None
 
 def keyword_fallback(command):
-    """Simple keyword matching used when OpenAI is unavailable."""
+    """Keyword matching used when OpenAI is unavailable or fails."""
     cmd = command.lower()
-    if "weather" in cmd:
+
+    # task mutations — check before generic "task" keyword
+    if any(w in cmd for w in ("add", "create", "new", "remember")):
+        # try to extract what comes after "add"/"create"/etc.
+        for kw in ("add", "create", "new task", "remember"):
+            if kw in cmd:
+                task_name = cmd.split(kw, 1)[-1].strip().strip(".,!?")
+                if task_name:
+                    return {"intent": "add_task", "screen": "tasks", "task": task_name,
+                            "spoken_response": f"Added {task_name} to your tasks."}
+
+    if any(w in cmd for w in ("complete", "done", "finish", "finished", "check off", "mark")):
+        for kw in ("complete", "done with", "finished", "finish", "check off", "mark"):
+            if kw in cmd:
+                task_name = cmd.split(kw, 1)[-1].strip().strip(".,!? as done")
+                if task_name:
+                    return {"intent": "complete_task", "screen": "tasks", "task": task_name,
+                            "spoken_response": f"Marked {task_name} as done."}
+
+    if any(w in cmd for w in ("remove", "delete", "cancel")):
+        for kw in ("remove", "delete", "cancel"):
+            if kw in cmd:
+                task_name = cmd.split(kw, 1)[-1].strip().strip(".,!?")
+                if task_name:
+                    return {"intent": "remove_task", "screen": "tasks", "task": task_name,
+                            "spoken_response": f"Removed {task_name}."}
+
+    if "weather" in cmd or "temperature" in cmd or "forecast" in cmd or "outside" in cmd:
         return {"intent": "get_weather",  "screen": "weather", "task": "",
                 "spoken_response": "Here is the weather."}
-    if "task" in cmd or "todo" in cmd or "list" in cmd:
+
+    if any(w in cmd for w in ("task", "todo", "to do", "list", "to-do")):
         return {"intent": "show_tasks",   "screen": "tasks",   "task": "",
                 "spoken_response": "Here are your tasks."}
-    if "clock" in cmd or "time" in cmd:
+
+    if any(w in cmd for w in ("time", "clock", "what time")):
         t = time.strftime("%I:%M %p")
         return {"intent": "show_clock",   "screen": "clock",   "task": "",
                 "spoken_response": f"The time is {t}."}
-    return     {"intent": "unknown",       "screen": "clock",   "task": "",
-                "spoken_response": "Sorry, I did not understand that."}
+
+    return {"intent": "unknown", "screen": "clock", "task": "",
+            "spoken_response": "Sorry, I did not catch that. Try asking about the weather, time, or tasks."}
 
 # ── Intent execution ───────────────────────────────────────────────────────────
 def execute_action(action):

@@ -1,7 +1,22 @@
-// ── State ──────────────────────────────────────────────────────────────────────
+// ── Fit #wrapper to the actual screen size ─────────────────────────────────
+// #wrapper is always 480×320 in CSS. This scales it down (or up) to fill
+// whatever Chromium reports as the viewport — fixes screen-cutoff on the Pi.
+function fitScreen() {
+  const el = document.getElementById("wrapper");
+  const sx = window.innerWidth  / 480;
+  const sy = window.innerHeight / 320;
+  const s  = Math.min(sx, sy);
+  el.style.transform = `scale(${s})`;
+  el.style.left = Math.round((window.innerWidth  - 480 * s) / 2) + "px";
+  el.style.top  = Math.round((window.innerHeight - 320 * s) / 2) + "px";
+}
+window.addEventListener("resize", fitScreen);
+fitScreen();
+
+// ── State ───────────────────────────────────────────────────────────────────
 let prevVoiceState = null;
 
-// ── Polling ─────────────────────────────────────────────────────────────────────
+// ── Polling (every 1 s) ─────────────────────────────────────────────────────
 async function loadState() {
   try {
     const res   = await fetch("/api/state");
@@ -12,45 +27,61 @@ async function loadState() {
   }
 }
 
-// ── Main render ─────────────────────────────────────────────────────────────────
+// ── Main render ─────────────────────────────────────────────────────────────
 function renderState(state) {
-  // clock
+  // ── sidebar clock
+  document.getElementById("sb-time").innerText = state.time;
+  document.getElementById("sb-date").innerText = state.date;
+
+  // ── sidebar weather
+  const wIcon = weatherEmoji(state.weather.description);
+  document.getElementById("sb-w-icon").innerText = wIcon;
+  document.getElementById("sb-w-temp").innerText = state.weather.temp + "°F";
+  document.getElementById("sb-w-desc").innerText = state.weather.description;
+
+  // ── sidebar task count
+  const done  = state.tasks.filter(t => t.done).length;
+  const total = state.tasks.length;
+  document.getElementById("sb-tasks").innerText =
+    total ? `${done}/${total} done` : "no tasks";
+
+  // ── main detail clock
   document.getElementById("time").innerText = state.time;
   document.getElementById("date").innerText = state.date;
 
-  // weather
-  const temp = parseInt(state.weather.temp, 10);
+  // ── main detail weather
+  document.getElementById("weather-icon").innerText = wIcon;
   document.getElementById("weather-temp").innerText = state.weather.temp + "°F";
   document.getElementById("weather-desc").innerText = state.weather.description;
   document.getElementById("weather-city").innerText = state.weather.city;
-  document.getElementById("weather-icon").innerText = weatherEmoji(state.weather.description);
 
-  // temperature colour
-  const ws = document.getElementById("weather-screen");
-  ws.dataset.feel = temp < 45 ? "cold" : temp < 65 ? "mild" : temp < 82 ? "warm" : "hot";
+  const ws   = document.getElementById("weather-screen");
+  const temp = parseInt(state.weather.temp, 10);
+  ws.dataset.feel = isNaN(temp) ? "mild"
+    : temp < 45 ? "cold" : temp < 65 ? "mild" : temp < 82 ? "warm" : "hot";
 
-  // tasks
+  // ── tasks
   renderTasks(state.tasks);
 
-  // always show the base screen
+  // ── screen + voice banner
   showScreen(state.screen);
+  updateBanner(state.voice_state);
+  updateMicDot(state.voice_state);
 
-  // voice banner (overlaid — doesn't replace the screen)
-  const vs = state.voice_state;
-  updateBanner(vs);
-  prevVoiceState = vs;
+  prevVoiceState = state.voice_state;
 }
 
-// ── Screen switching ────────────────────────────────────────────────────────────
+// ── Screen switching ────────────────────────────────────────────────────────
 function showScreen(name) {
   document.querySelectorAll(".screen").forEach(s => s.classList.add("hidden"));
   const el = document.getElementById(name + "-screen");
   if (el) el.classList.remove("hidden");
 
-  ["clock", "weather", "tasks"].forEach((s, i) => {
-    document.querySelectorAll("nav button")[i]
-            .classList.toggle("active", s === name);
-  });
+  document.querySelectorAll("#sidebar-nav button").forEach(b =>
+    b.classList.remove("active"));
+  const idx = { clock: 0, weather: 1, tasks: 2 }[name];
+  if (idx !== undefined)
+    document.querySelectorAll("#sidebar-nav button")[idx].classList.add("active");
 }
 
 async function setScreen(name) {
@@ -60,35 +91,24 @@ async function setScreen(name) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ screen: name }),
     });
-  } catch (err) { console.error("[momo] setScreen:", err); }
+  } catch (e) { console.error("[momo] setScreen:", e); }
   loadState();
 }
 
 async function triggerWeather() {
   try { await fetch("/api/weather", { method: "POST" }); }
-  catch (err) { console.error("[momo] weather:", err); }
+  catch (e) { console.error("[momo] weather:", e); }
   loadState();
 }
 
-// ── Voice banner ────────────────────────────────────────────────────────────────
-const BANNER_FACES = {
-  listening: "◑‿◑",
-  thinking:  "⊙_⊙",
-  speaking:  "◕ω◕",
-};
-
-const BANNER_LABELS = {
-  listening: "Listening...",
-  thinking:  "Thinking...",
-  speaking:  "Speaking...",
-};
+// ── Voice banner ────────────────────────────────────────────────────────────
+const BANNER_FACES  = { listening: "◑‿◑", thinking: "⊙_⊙", speaking: "◕ω◕" };
+const BANNER_LABELS = { listening: "Listening...", thinking: "Thinking...", speaking: "Speaking..." };
 
 function updateBanner(vs) {
   const banner = document.getElementById("voice-banner");
   const active = vs === "listening" || vs === "thinking" || vs === "speaking";
-
   banner.classList.toggle("visible", active);
-
   if (!active || vs === prevVoiceState) return;
 
   document.getElementById("banner-face").innerText   = BANNER_FACES[vs]  || "◕‿◕";
@@ -104,33 +124,39 @@ function updateBanner(vs) {
   }
 }
 
-// ── Weather emoji ────────────────────────────────────────────────────────────────
+// ── Sidebar mic dot ─────────────────────────────────────────────────────────
+function updateMicDot(vs) {
+  const dot = document.getElementById("mic-dot");
+  dot.className = ["listening","thinking","speaking"].includes(vs) ? vs : "";
+}
+
+// ── Weather emoji ───────────────────────────────────────────────────────────
 function weatherEmoji(desc) {
   if (!desc) return "🌤️";
   const d = desc.toLowerCase();
-  if (d.includes("thunder") || d.includes("storm")) return "⛈️";
-  if (d.includes("snow") || d.includes("blizzard"))  return "❄️";
-  if (d.includes("rain") || d.includes("drizzle"))   return "🌧️";
-  if (d.includes("fog")  || d.includes("mist"))      return "🌫️";
-  if (d.includes("overcast") || d.includes("cloudy"))return "☁️";
-  if (d.includes("partly"))                          return "⛅";
-  if (d.includes("sun") || d.includes("clear"))      return "☀️";
+  if (d.includes("thunder") || d.includes("storm"))  return "⛈️";
+  if (d.includes("snow")    || d.includes("blizzard"))return "❄️";
+  if (d.includes("rain")    || d.includes("drizzle")) return "🌧️";
+  if (d.includes("fog")     || d.includes("mist"))    return "🌫️";
+  if (d.includes("overcast"))                         return "☁️";
+  if (d.includes("cloudy"))                           return "🌥️";
+  if (d.includes("partly"))                           return "⛅";
+  if (d.includes("sun")     || d.includes("clear"))   return "☀️";
   return "🌤️";
 }
 
-// ── Task rendering ──────────────────────────────────────────────────────────────
+// ── Task rendering ──────────────────────────────────────────────────────────
 function renderTasks(tasks) {
   const list = document.getElementById("tasks-list");
   list.innerHTML = "";
 
-  // progress badge
   const done  = tasks.filter(t => t.done).length;
   const prog  = document.getElementById("tasks-progress");
-  prog.innerText  = tasks.length ? `${done} / ${tasks.length}` : "";
+  prog.innerText     = tasks.length ? `${done} / ${tasks.length}` : "";
   prog.style.display = tasks.length ? "" : "none";
 
-  if (!tasks || tasks.length === 0) {
-    list.innerHTML = '<div class="tasks-empty">No tasks yet!</div>';
+  if (!tasks.length) {
+    list.innerHTML = '<div class="tasks-empty">No tasks — add one!</div>';
     return;
   }
 
@@ -154,14 +180,12 @@ function renderTasks(tasks) {
     rm.innerText  = "✕";
     rm.onclick    = e => { e.stopPropagation(); removeTask(task.id); };
 
-    row.appendChild(check);
-    row.appendChild(label);
-    row.appendChild(rm);
+    row.append(check, label, rm);
     list.appendChild(row);
   });
 }
 
-// ── Task actions ────────────────────────────────────────────────────────────────
+// ── Task actions ────────────────────────────────────────────────────────────
 async function completeTask(id) {
   try {
     await fetch("/api/task/complete", {
@@ -169,7 +193,7 @@ async function completeTask(id) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-  } catch (err) { console.error("[momo] complete:", err); }
+  } catch (e) { console.error("[momo] complete:", e); }
   loadState();
 }
 
@@ -180,11 +204,11 @@ async function removeTask(id) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-  } catch (err) { console.error("[momo] remove:", err); }
+  } catch (e) { console.error("[momo] remove:", e); }
   loadState();
 }
 
-// ── Add task modal ──────────────────────────────────────────────────────────────
+// ── Add task modal ──────────────────────────────────────────────────────────
 function showAddTask() {
   document.getElementById("modal").classList.remove("hidden");
   setTimeout(() => document.getElementById("task-input").focus(), 50);
@@ -205,7 +229,7 @@ async function addTask() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
-  } catch (err) { console.error("[momo] add:", err); }
+  } catch (e) { console.error("[momo] add:", e); }
   hideAddTask();
   setScreen("tasks");
 }
@@ -217,6 +241,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// ── Poll every second ───────────────────────────────────────────────────────────
+// ── Start ───────────────────────────────────────────────────────────────────
 setInterval(loadState, 1000);
 loadState();
