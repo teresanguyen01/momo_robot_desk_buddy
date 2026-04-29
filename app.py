@@ -140,7 +140,8 @@ CITY             = "New Haven"
 TASKS_FILE       = os.path.join(os.path.dirname(__file__), "tasks.json")
 OPENAI_API_KEY   = os.environ.get("OPENAI_API_KEY", "")
 VOICE_ENABLED    = True
-MIC_DEVICE_INDEX = None   # None = ALSA default (set via ~/.asoundrc to plughw:1,0)
+MIC_DEVICE_INDEX = None   # kept for reference; audio capture uses ALSA_MIC_DEVICE directly
+ALSA_MIC_DEVICE  = "plughw:1,0"   # USB PnP mic — confirmed working with arecord
 CAMERA_ENABLED   = True
 CAMERA_INDEX     = 0      # Brio 100 webcam (OpenCV index)
 
@@ -594,19 +595,14 @@ def handle_multi_turn(recognizer, action):
     intent = action.get("intent","unknown")
     task   = action.get("task","").strip()
 
-    def ask_and_listen(question, timeout=7, phrase_limit=6):
+    def ask_and_listen(question, duration=5):
         """Speak a question, show listening banner, return transcript or None."""
         with state_lock:
             state["voice_state"] = "speaking"
         speak(question)
         with state_lock:
             state["voice_state"] = "listening"
-        try:
-            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as src:
-                recognizer.adjust_for_ambient_noise(src, duration=0.2)
-                return _transcribe(recognizer, src, timeout=timeout, phrase_limit=phrase_limit)
-        except Exception:
-            return None
+        return _record_and_transcribe(recognizer, duration=duration)
 
     if intent == "add_task" and not task:
         answer = ask_and_listen("Sure! What task would you like to add?")
@@ -756,44 +752,44 @@ def _is_wake_command(text):
 # ── Voice loop ─────────────────────────────────────────────────────────────────
 WAKE_WORD = "momo"
 
-def _transcribe(recognizer, source, timeout, phrase_limit):
+def _record_and_transcribe(recognizer, duration=5):
+    """Record audio via arecord (bypasses PyAudio) and transcribe with Google STT."""
+    wav = "/tmp/momo_listen.wav"
     try:
-        audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_limit)
-    except sr.WaitTimeoutError:
+        result = subprocess.run(
+            ["arecord", "-D", ALSA_MIC_DEVICE, "-f", "S16_LE",
+             "-r", "16000", "-c", "1", "-d", str(duration), wav],
+            capture_output=True, timeout=duration + 3
+        )
+        if result.returncode != 0:
+            print(f"[voice] arecord failed: {result.stderr.decode().strip()}")
+            return None
+    except Exception as e:
+        print(f"[voice] arecord error: {e}")
         return None
     try:
+        with sr.AudioFile(wav) as source:
+            audio = recognizer.record(source)
         return recognizer.recognize_google(audio).lower()
     except sr.UnknownValueError:
         return None
     except sr.RequestError as e:
         print(f"[voice] STT error: {e}")
         return None
+    except Exception as e:
+        print(f"[voice] Transcribe error: {e}")
+        return None
 
 def voice_loop():
-    print("Mic devices:", sr.Microphone.list_microphone_names())
-    print("Using MIC_DEVICE_INDEX:", MIC_DEVICE_INDEX)
     recognizer = sr.Recognizer()
-    recognizer.dynamic_energy_threshold = False  # fixed threshold — don't keep raising the bar
-    recognizer.energy_threshold         = 150    # low = more sensitive; raise if too much noise
-    recognizer.pause_threshold          = 0.6    # seconds of silence to end phrase (default 0.8)
-    recognizer.non_speaking_duration    = 0.4    # seconds of silence before phrase ends
-
-    print(f"[voice] Energy threshold: {recognizer.energy_threshold}")
-
     print(f"[voice] Ready — say '{WAKE_WORD} <command>'")
 
     time.sleep(1.5)
     speak(_startup_greeting())
 
     while True:
-        # ══ Phase 1: silent passive listening (voice_state stays "idle") ══════
-        try:
-            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
-                heard = _transcribe(recognizer, source, timeout=10, phrase_limit=6)
-        except Exception as e:
-            print(f"[voice] Mic error: {e} — retrying in 5s")
-            time.sleep(5)
-            continue
+        # ══ Phase 1: record 4s chunk, look for wake word ══════════════════
+        heard = _record_and_transcribe(recognizer, duration=4)
 
         if not heard:
             print("[voice] (nothing heard)")
@@ -802,7 +798,7 @@ def voice_loop():
         if WAKE_WORD not in heard:
             continue
 
-        print(f"[voice] Wake word: '{heard}'")
+        print(f"[voice] Wake word detected: '{heard}'")
         after_wake = heard.split(WAKE_WORD, 1)[-1].strip()
 
         # ── Read sleep_mode once outside the hot path ──────────────────────
@@ -811,7 +807,6 @@ def voice_loop():
 
         # ══ Sleep mode: only accept wake commands ═════════════════════════
         if currently_sleeping:
-            # If the phrase after "momo" is a wake command, wake up
             if after_wake and _is_wake_command(after_wake):
                 with state_lock:
                     state["sleep_mode"] = False
@@ -820,7 +815,6 @@ def voice_loop():
                 with state_lock:
                     state["face"] = "idle"
             else:
-                # Still asleep — say nothing, ignore command
                 print("[voice] Sleeping — ignoring command")
             continue
 
@@ -829,16 +823,7 @@ def voice_loop():
             speak("Yeah?")
             with state_lock:
                 state["voice_state"] = "listening"
-            try:
-                with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
-                    recognizer.adjust_for_ambient_noise(source, duration=0.2)
-                    after_wake = _transcribe(recognizer, source, timeout=5, phrase_limit=7)
-            except Exception as e:
-                print(f"[voice] Mic error on follow-up: {e}")
-                with state_lock:
-                    state["voice_state"] = "idle"
-                continue
-
+            after_wake = _record_and_transcribe(recognizer, duration=5)
             if not after_wake:
                 with state_lock:
                     state["voice_state"] = "idle"
