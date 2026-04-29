@@ -140,7 +140,7 @@ CITY             = "New Haven"
 TASKS_FILE       = os.path.join(os.path.dirname(__file__), "tasks.json")
 OPENAI_API_KEY   = os.environ.get("OPENAI_API_KEY", "")
 VOICE_ENABLED    = True
-MIC_DEVICE_INDEX = 0      # USB PnP Sound Device
+MIC_DEVICE_INDEX = 1      # USB PnP Sound Device
 CAMERA_ENABLED   = True
 CAMERA_INDEX     = 0      # Brio 100 webcam (OpenCV index)
 
@@ -604,10 +604,10 @@ def handle_multi_turn(recognizer, action):
         with state_lock:
             state["voice_state"] = "listening"
         try:
-            with sr.Microphone(device_index=_safe_mic_index()) as src:
+            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as src:
                 recognizer.adjust_for_ambient_noise(src, duration=0.2)
                 return _transcribe(recognizer, src, timeout=timeout, phrase_limit=phrase_limit)
-        except OSError:
+        except Exception:
             return None
 
     if intent == "add_task" and not task:
@@ -732,14 +732,6 @@ def camera_thread():
     except Exception as e:
         print(f"[camera] Error: {e}")
 
-# ── Safe mic index helper ──────────────────────────────────────────────────────
-def _safe_mic_index():
-    """Return MIC_DEVICE_INDEX if valid, else None (PyAudio default device)."""
-    try:
-        devices = sr.Microphone.list_microphone_names()
-        return MIC_DEVICE_INDEX if devices and MIC_DEVICE_INDEX < len(devices) else None
-    except Exception:
-        return None
 
 # ── Sleep / wake helpers ───────────────────────────────────────────────────────
 _SLEEP_KEYWORDS = {
@@ -792,10 +784,10 @@ def voice_loop():
     while True:
         # ══ Phase 1: silent passive listening (voice_state stays "idle") ══════
         try:
-            with sr.Microphone(device_index=_safe_mic_index()) as source:
+            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
                 recognizer.adjust_for_ambient_noise(source, duration=0.3)
                 heard = _transcribe(recognizer, source, timeout=8, phrase_limit=5)
-        except (OSError, AssertionError) as e:
+        except Exception as e:
             print(f"[voice] Mic error: {e} — retrying in 5s")
             time.sleep(5)
             continue
@@ -831,10 +823,10 @@ def voice_loop():
             with state_lock:
                 state["voice_state"] = "listening"
             try:
-                with sr.Microphone(device_index=_safe_mic_index()) as source:
+                with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
                     recognizer.adjust_for_ambient_noise(source, duration=0.2)
                     after_wake = _transcribe(recognizer, source, timeout=5, phrase_limit=7)
-            except (OSError, AssertionError) as e:
+            except Exception as e:
                 print(f"[voice] Mic error on follow-up: {e}")
                 with state_lock:
                     state["voice_state"] = "idle"
