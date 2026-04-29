@@ -774,7 +774,7 @@ def voice_loop():
     print("Using MIC_DEVICE_INDEX:", MIC_DEVICE_INDEX)
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = False  # fixed threshold — don't keep raising the bar
-    recognizer.energy_threshold         = 300    # low = more sensitive; raise if too much noise
+    recognizer.energy_threshold         = 150    # low = more sensitive; raise if too much noise
     recognizer.pause_threshold          = 0.6    # seconds of silence to end phrase (default 0.8)
     recognizer.non_speaking_duration    = 0.4    # seconds of silence before phrase ends
 
