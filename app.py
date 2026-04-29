@@ -778,14 +778,7 @@ def voice_loop():
     recognizer.pause_threshold          = 0.6    # seconds of silence to end phrase (default 0.8)
     recognizer.non_speaking_duration    = 0.4    # seconds of silence before phrase ends
 
-    # One-time calibration against ambient noise
-    print("[voice] Calibrating microphone...")
-    try:
-        with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
-            recognizer.adjust_for_ambient_noise(source, duration=2)
-        print(f"[voice] Calibrated — energy threshold: {recognizer.energy_threshold:.0f}")
-    except Exception as e:
-        print(f"[voice] Calibration failed: {e} — using default threshold")
+    print(f"[voice] Energy threshold: {recognizer.energy_threshold}")
 
     print(f"[voice] Ready — say '{WAKE_WORD} <command>'")
 
@@ -802,7 +795,11 @@ def voice_loop():
             time.sleep(5)
             continue
 
-        if not heard or WAKE_WORD not in heard:
+        if not heard:
+            print("[voice] (nothing heard)")
+            continue
+        print(f"[voice] Heard: '{heard}'")
+        if WAKE_WORD not in heard:
             continue
 
         print(f"[voice] Wake word: '{heard}'")
