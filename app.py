@@ -146,6 +146,7 @@ CAMERA_INDEX     = 0      # Brio 100 webcam (OpenCV index)
 
 # ── Flask ──────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
+print("Mic device index is", MIC_DEVICE_INDEX)
 
 # ── Shared state + lock ────────────────────────────────────────────────────────
 # RULE: all reads/writes to `state` must be inside `with state_lock`.
