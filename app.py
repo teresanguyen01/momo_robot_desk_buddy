@@ -783,7 +783,15 @@ def voice_loop():
     while True:
         # ══ Phase 1: silent passive listening (voice_state stays "idle") ══════
         try:
-            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
+            devices = sr.Microphone.list_microphone_names()
+            if not devices:
+                print("[voice] No mic devices found, retrying...")
+                time.sleep(3)
+                continue
+
+            mic_index = MIC_DEVICE_INDEX if MIC_DEVICE_INDEX < len(devices) else None
+
+            with sr.Microphone(device_index=mic_index) as source:
                 recognizer.adjust_for_ambient_noise(source, duration=0.3)
                 heard = _transcribe(recognizer, source, timeout=8, phrase_limit=5)
         except OSError as e:
