@@ -773,7 +773,20 @@ def voice_loop():
     print("Mic devices:", sr.Microphone.list_microphone_names())
     print("Using MIC_DEVICE_INDEX:", MIC_DEVICE_INDEX)
     recognizer = sr.Recognizer()
-    recognizer.dynamic_energy_threshold = True
+    recognizer.dynamic_energy_threshold = False  # fixed threshold — don't keep raising the bar
+    recognizer.energy_threshold         = 300    # low = more sensitive; raise if too much noise
+    recognizer.pause_threshold          = 0.6    # seconds of silence to end phrase (default 0.8)
+    recognizer.non_speaking_duration    = 0.4    # seconds of silence before phrase ends
+
+    # One-time calibration against ambient noise
+    print("[voice] Calibrating microphone...")
+    try:
+        with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
+            recognizer.adjust_for_ambient_noise(source, duration=2)
+        print(f"[voice] Calibrated — energy threshold: {recognizer.energy_threshold:.0f}")
+    except Exception as e:
+        print(f"[voice] Calibration failed: {e} — using default threshold")
+
     print(f"[voice] Ready — say '{WAKE_WORD} <command>'")
 
     time.sleep(1.5)
@@ -783,8 +796,7 @@ def voice_loop():
         # ══ Phase 1: silent passive listening (voice_state stays "idle") ══════
         try:
             with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
-                recognizer.adjust_for_ambient_noise(source, duration=0.3)
-                heard = _transcribe(recognizer, source, timeout=8, phrase_limit=5)
+                heard = _transcribe(recognizer, source, timeout=10, phrase_limit=6)
         except Exception as e:
             print(f"[voice] Mic error: {e} — retrying in 5s")
             time.sleep(5)
