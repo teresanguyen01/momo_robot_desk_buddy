@@ -771,6 +771,8 @@ def _transcribe(recognizer, source, timeout, phrase_limit):
         return None
 
 def voice_loop():
+    print("Mic devices:", sr.Microphone.list_microphone_names())
+    print("Using MIC_DEVICE_INDEX:", MIC_DEVICE_INDEX)
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = True
     print(f"[voice] Ready — say '{WAKE_WORD} <command>'")
