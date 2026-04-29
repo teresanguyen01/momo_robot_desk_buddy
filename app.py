@@ -140,7 +140,7 @@ CITY             = "New Haven"
 TASKS_FILE       = os.path.join(os.path.dirname(__file__), "tasks.json")
 OPENAI_API_KEY   = os.environ.get("OPENAI_API_KEY", "")
 VOICE_ENABLED    = True
-MIC_DEVICE_INDEX = 1      # USB PnP Sound Device
+MIC_DEVICE_INDEX = 0      # USB PnP Sound Device
 CAMERA_ENABLED   = True
 CAMERA_INDEX     = 0      # Brio 100 webcam (OpenCV index)
 
