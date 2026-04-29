@@ -140,7 +140,7 @@ CITY             = "New Haven"
 TASKS_FILE       = os.path.join(os.path.dirname(__file__), "tasks.json")
 OPENAI_API_KEY   = os.environ.get("OPENAI_API_KEY", "")
 VOICE_ENABLED    = True
-MIC_DEVICE_INDEX = 1      # USB PnP Sound Device
+MIC_DEVICE_INDEX = None   # None = ALSA default (set via ~/.asoundrc to plughw:1,0)
 CAMERA_ENABLED   = True
 CAMERA_INDEX     = 0      # Brio 100 webcam (OpenCV index)
 
@@ -230,19 +230,17 @@ def speak(text):
     wav  = "/tmp/momo_speech.wav"
 
     if asyncio.run(_edge_tts(safe, mp3)):
-        player = "mpg123" if subprocess.run("which mpg123", shell=True,
-                                             capture_output=True).returncode == 0 else "pw-play"
-        subprocess.run(f"{player} -q {mp3}" if player == "mpg123"
-                       else f"pw-play {mp3}", shell=True)
+        if subprocess.run("which mpg123", shell=True, capture_output=True).returncode == 0:
+            subprocess.run(f"mpg123 -q -a plughw:0,0 {mp3}", shell=True)
+        else:
+            subprocess.run(f"aplay -D plughw:0,0 {mp3}", shell=True)
         return
 
     print("[speak] falling back to pico2wave")
     if subprocess.run(f'pico2wave -w {wav} "{safe}"', shell=True).returncode != 0:
         subprocess.run(f'espeak -a 200 -s 150 "{safe}" -w {wav}', shell=True)
 
-    player = "pw-play" if subprocess.run("which pw-play", shell=True,
-                                          capture_output=True).returncode == 0 else "aplay"
-    subprocess.run(f"{player} {wav}", shell=True)
+    subprocess.run(f"aplay -D plughw:0,0 {wav}", shell=True)
 
 # ── Spoken response helpers ────────────────────────────────────────────────────
 def _time_response():
