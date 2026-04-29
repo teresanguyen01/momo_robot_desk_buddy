@@ -88,6 +88,9 @@ function renderState(state) {
   // ── presence dot
   updatePresence(state.presence);
 
+  // ── sleep mode
+  updateSleepMode(state.sleep_mode);
+
   prevVoiceState = state.voice_state;
 }
 
@@ -135,6 +138,11 @@ function updateTimer(timer) {
     ? (timer.seconds_left / timer.total_seconds) * 100
     : 0;
   document.getElementById("timer-bar").style.width = pct + "%";
+}
+
+// ── Sleep mode ───────────────────────────────────────────────────────────────
+function updateSleepMode(sleeping) {
+  document.getElementById("sleep-badge").classList.toggle("hidden", !sleeping);
 }
 
 // ── Presence dot ─────────────────────────────────────────────────────────────

@@ -164,6 +164,15 @@ html, body {
 #presence-dot.present { background: #34d399; }
 #presence-dot.absent  { background: #1e3a5f; }
 
+/* sleep mode badge */
+#sleep-badge {
+  font-size: 9px;
+  color: #1e3a5f;
+  letter-spacing: 3px;
+  margin-top: 4px;
+  animation: sleeping-pulse 3s ease-in-out infinite;
+}
+
 /* mic status dot */
 #mic-dot {
   width: 8px;

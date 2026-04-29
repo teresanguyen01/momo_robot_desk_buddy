@@ -604,7 +604,7 @@ def handle_multi_turn(recognizer, action):
         with state_lock:
             state["voice_state"] = "listening"
         try:
-            with sr.Microphone(device_index=MIC_DEVICE_INDEX) as src:
+            with sr.Microphone(device_index=_safe_mic_index()) as src:
                 recognizer.adjust_for_ambient_noise(src, duration=0.2)
                 return _transcribe(recognizer, src, timeout=timeout, phrase_limit=phrase_limit)
         except OSError:
@@ -732,6 +732,15 @@ def camera_thread():
     except Exception as e:
         print(f"[camera] Error: {e}")
 
+# ── Safe mic index helper ──────────────────────────────────────────────────────
+def _safe_mic_index():
+    """Return MIC_DEVICE_INDEX if valid, else None (PyAudio default device)."""
+    try:
+        devices = sr.Microphone.list_microphone_names()
+        return MIC_DEVICE_INDEX if devices and MIC_DEVICE_INDEX < len(devices) else None
+    except Exception:
+        return None
+
 # ── Sleep / wake helpers ───────────────────────────────────────────────────────
 _SLEEP_KEYWORDS = {
     "go to sleep", "sleep", "turn off", "shut down", "shutdown",
@@ -783,19 +792,11 @@ def voice_loop():
     while True:
         # ══ Phase 1: silent passive listening (voice_state stays "idle") ══════
         try:
-            devices = sr.Microphone.list_microphone_names()
-            if not devices:
-                print("[voice] No mic devices found, retrying...")
-                time.sleep(3)
-                continue
-
-            mic_index = MIC_DEVICE_INDEX if MIC_DEVICE_INDEX < len(devices) else None
-
-            with sr.Microphone(device_index=mic_index) as source:
+            with sr.Microphone(device_index=_safe_mic_index()) as source:
                 recognizer.adjust_for_ambient_noise(source, duration=0.3)
                 heard = _transcribe(recognizer, source, timeout=8, phrase_limit=5)
-        except OSError as e:
-            print(f"[voice] Mic error: {e}")
+        except (OSError, AssertionError) as e:
+            print(f"[voice] Mic error: {e} — retrying in 5s")
             time.sleep(5)
             continue
 
@@ -830,10 +831,10 @@ def voice_loop():
             with state_lock:
                 state["voice_state"] = "listening"
             try:
-                with sr.Microphone(device_index=MIC_DEVICE_INDEX) as source:
+                with sr.Microphone(device_index=_safe_mic_index()) as source:
                     recognizer.adjust_for_ambient_noise(source, duration=0.2)
                     after_wake = _transcribe(recognizer, source, timeout=5, phrase_limit=7)
-            except OSError as e:
+            except (OSError, AssertionError) as e:
                 print(f"[voice] Mic error on follow-up: {e}")
                 with state_lock:
                     state["voice_state"] = "idle"
