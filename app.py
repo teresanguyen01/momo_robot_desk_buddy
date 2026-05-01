@@ -135,6 +135,13 @@ except ImportError:
     CV2_AVAILABLE = False
     print("[init] opencv not installed — camera presence disabled")
 
+try:
+    import serial as pyserial
+    SERIAL_AVAILABLE = True
+except ImportError:
+    SERIAL_AVAILABLE = False
+    print("[init] pyserial not installed — servo disabled (pip install pyserial)")
+
 # ── Configuration ──────────────────────────────────────────────────────────────
 CITY             = "New Haven"
 TASKS_FILE       = os.path.join(os.path.dirname(__file__), "tasks.json")
@@ -144,6 +151,17 @@ MIC_DEVICE_INDEX = None   # kept for reference; audio capture uses ALSA_MIC_DEVI
 ALSA_MIC_DEVICE  = "plughw:1,0"   # USB PnP mic — confirmed working with arecord
 CAMERA_ENABLED   = True
 CAMERA_INDEX     = 0      # Brio 100 webcam (OpenCV index)
+
+# ── Servo / Arduino config ─────────────────────────────────────────────────────
+SERVO_ENABLED    = True
+ARDUINO_PORT     = "/dev/ttyACM0"
+ARDUINO_BAUD     = 9600
+SERVO_REVERSE    = False  # set True if servo moves opposite to face direction
+SERVO_START_ANGLE = 90   # degrees — center position sent on startup
+SERVO_MIN_ANGLE  = 0
+SERVO_MAX_ANGLE  = 180
+SERVO_DEAD_ZONE  = 40    # px — ignore face offset smaller than this (prevents jitter)
+SERVO_STEP_SIZE  = 2     # degrees to move per camera frame (lower = smoother)
 
 # ── Flask ──────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -170,6 +188,11 @@ state = {
     "reminders": [],    # [{"id": int, "text": str, "fire_at": float, "fired": bool}]
     "presence":  True,  # True = someone detected at desk
     "sleep_mode": False, # True = Momo is asleep, only wakes on wake command
+    "servo": {
+        "enabled":   SERVO_ENABLED,
+        "connected": False,
+        "angle":     SERVO_START_ANGLE,
+    },
 }
 
 # ── Task persistence ───────────────────────────────────────────────────────────
@@ -672,23 +695,84 @@ def reminder_checker():
             print(f"[reminder] Firing: {text}")
             speak(f"Hey! Just a reminder: {text}. Hope you're staying on top of things!")
 
+# ── Arduino servo control ──────────────────────────────────────────────────────
+# The Arduino sketch reads a plain integer (0–180) followed by '\n' on Serial
+# and moves the servo to that angle. We just write that over pyserial.
+
+_arduino = None          # holds the open serial.Serial object
+_servo_angle = SERVO_START_ANGLE   # tracks the last angle we sent
+
+def init_servo():
+    """Open the serial connection to the Arduino and send the start angle.
+    Sets state["servo"]["connected"] = True on success, False on failure.
+    Safe to call even if Arduino is unplugged — will just print a warning."""
+    global _arduino, _servo_angle
+
+    if not SERVO_ENABLED or not SERIAL_AVAILABLE:
+        return
+
+    try:
+        _arduino = pyserial.Serial(ARDUINO_PORT, ARDUINO_BAUD, timeout=1)
+        time.sleep(2)   # wait for Arduino to reset after serial open
+        _servo_angle = SERVO_START_ANGLE
+        _arduino.write(f"{SERVO_START_ANGLE}\n".encode())
+        print(f"[servo] Arduino servo controller connected on {ARDUINO_PORT}")
+        print(f"[servo] Sent start angle: {SERVO_START_ANGLE}")
+        with state_lock:
+            state["servo"]["connected"] = True
+            state["servo"]["angle"]     = SERVO_START_ANGLE
+    except Exception as e:
+        _arduino = None
+        print(f"[servo] Servo disabled: could not open serial port — {e}")
+        with state_lock:
+            state["servo"]["connected"] = False
+
+def move_servo(angle):
+    """Send a new angle to the Arduino servo (0–180).
+    Clamps to min/max, skips tiny changes under 2°, catches serial errors."""
+    global _arduino, _servo_angle
+
+    if not SERVO_ENABLED or _arduino is None:
+        return
+
+    # Clamp to safe range
+    angle = max(SERVO_MIN_ANGLE, min(SERVO_MAX_ANGLE, angle))
+
+    # Skip if change is too small (avoids constant micro-jitter)
+    if abs(angle - _servo_angle) < 2:
+        return
+
+    try:
+        _arduino.write(f"{angle}\n".encode())
+        _servo_angle = angle
+        print(f"[servo] Sent servo angle: {angle}")
+        with state_lock:
+            state["servo"]["angle"] = angle
+    except Exception as e:
+        print(f"[servo] Serial write error: {e}")
+        # Mark as disconnected so we stop trying until restart
+        with state_lock:
+            state["servo"]["connected"] = False
+        _arduino = None
+
 # ── Background: camera presence detection ─────────────────────────────────────
 def camera_thread():
-    """Uses OpenCV face detection to detect if someone is at the desk."""
+    """Uses OpenCV face detection for presence detection and servo face-tracking."""
     if not CV2_AVAILABLE:
         return
     try:
         cap = cv2.VideoCapture(CAMERA_INDEX)
         if not cap.isOpened():
-            print(f"[camera] Could not open camera index {CAMERA_INDEX}")
+            print(f"[camera] Could not open camera on index {CAMERA_INDEX}")
             return
+        print(f"[camera] Camera opened on index {CAMERA_INDEX}")
 
-        cascade  = cv2.CascadeClassifier(
+        cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
         )
-        was_present = True
+        was_present   = True
         absent_frames = 0
-        print("[camera] Presence detection active")
+        print("[camera] Presence detection + face tracking active")
 
         while True:
             ret, frame = cap.read()
@@ -696,11 +780,14 @@ def camera_thread():
                 time.sleep(2)
                 continue
 
+            frame_h, frame_w = frame.shape[:2]
+            frame_center_x   = frame_w // 2   # horizontal midpoint of the camera frame
+
             gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
-            present_now = len(faces) > 0
 
-            # Debounce: need 4 absent frames in a row before declaring "away"
+            # ── Presence logic (unchanged) ─────────────────────────────────────
+            present_now = len(faces) > 0
             if not present_now:
                 absent_frames += 1
                 present_now = absent_frames < 4
@@ -708,8 +795,9 @@ def camera_thread():
                 absent_frames = 0
 
             with state_lock:
+                sleeping = state["sleep_mode"]
                 state["presence"] = present_now
-                if not present_now and state["face"] in ("idle","happy","excited"):
+                if not present_now and state["face"] in ("idle", "happy", "excited"):
                     state["face"] = "sleeping"
                 elif present_now and state["face"] == "sleeping":
                     state["face"] = "idle"
@@ -721,7 +809,36 @@ def camera_thread():
                     state["face"] = "happy"
 
             was_present = present_now
-            time.sleep(2)
+
+            # ── Servo face-tracking ────────────────────────────────────────────
+            # Only track when servo is enabled, connected, and Momo is not asleep.
+            if SERVO_ENABLED and len(faces) > 0 and not sleeping:
+
+                # Pick the largest detected face (most likely the user)
+                largest = max(faces, key=lambda f: f[2] * f[3])
+                fx, fy, fw, fh = largest
+
+                # Calculate the horizontal center of that face
+                face_center_x = fx + fw // 2
+
+                # How far left/right is the face from the frame center?
+                offset = face_center_x - frame_center_x
+
+                # Only move if offset exceeds the dead zone (avoids jitter)
+                if abs(offset) > SERVO_DEAD_ZONE:
+                    if offset < 0:
+                        # Face is LEFT of center → turn servo left
+                        direction = -1 if not SERVO_REVERSE else 1
+                        print("[camera] Face left, moving servo")
+                    else:
+                        # Face is RIGHT of center → turn servo right
+                        direction = 1 if not SERVO_REVERSE else -1
+                        print("[camera] Face right, moving servo")
+
+                    new_angle = _servo_angle + direction * SERVO_STEP_SIZE
+                    move_servo(new_angle)
+
+            time.sleep(0.5)   # check ~2× per second; fast enough to track, slow enough to be smooth
 
     except Exception as e:
         print(f"[camera] Error: {e}")
@@ -885,6 +1002,7 @@ def api_state():
             "timer":       dict(state["timer"]),
             "presence":    state["presence"],
             "sleep_mode":  state["sleep_mode"],
+            "servo":       dict(state["servo"]),
             "time":        time.strftime("%I:%M %p"),
             "date":        time.strftime("%A, %B %d"),
         }
@@ -963,6 +1081,9 @@ if __name__ == "__main__":
         state["tasks"] = load_tasks()
     print(f"[init] {len(state['tasks'])} task(s) loaded")
     print(f"[init] OpenAI: {'configured' if OPENAI_API_KEY else 'NOT SET — keyword fallback'}")
+
+    # Servo init (blocking — waits 2s for Arduino reset before threads start)
+    init_servo()
 
     # Timer tick thread
     threading.Thread(target=timer_tick, daemon=True, name="TimerTick").start()
