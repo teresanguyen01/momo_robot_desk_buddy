@@ -311,6 +311,16 @@ def play_music(song_name):
         state["music_song"] = song_name
     print(f"[music] Playing: {song_name} (logs: /tmp/momo_ytdlp.log, /tmp/momo_ffmpeg.log)")
 
+    # Monitor thread: clear music_song when the process finishes on its own
+    proc = _music_process
+    def _watch():
+        proc.wait()
+        with state_lock:
+            if state["music_song"] == song_name:
+                state["music_song"] = ""
+        print(f"[music] Process ended for: {song_name}")
+    threading.Thread(target=_watch, daemon=True).start()
+
 def stop_music():
     """Stop any currently playing music (kills entire pipeline process group)."""
     global _music_process
