@@ -5,6 +5,7 @@ Set: export OPENAI_API_KEY=sk-...
 """
 import random
 import os
+import signal
 import re
 import json
 import time
@@ -292,25 +293,28 @@ def play_music(song_name):
         print("[music] ERROR: aplay not found")
         return
 
-    # Kill any lingering aplay process (e.g. TTS that just finished) so device is free
-    subprocess.run(["pkill", "-x", "aplay"], capture_output=True)
-    time.sleep(0.4)
-
     cmd = (
         f'{ytdlp} -f bestaudio --no-playlist '
         f'"ytsearch1:{song_name}" -o - 2>/tmp/momo_ytdlp.log | '
         f'{ffmpeg} -i pipe:0 -f wav -ar 44100 -ac 2 pipe:1 2>/tmp/momo_ffmpeg.log | '
         f'{aplay} -D plughw:0,0'
     )
-    _music_process = subprocess.Popen(cmd, shell=True)
+    # Use a new process group so stop_music() can kill the whole pipeline (shell + children)
+    _music_process = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
     print(f"[music] Playing: {song_name} (logs: /tmp/momo_ytdlp.log, /tmp/momo_ffmpeg.log)")
 
 def stop_music():
-    """Stop any currently playing music."""
+    """Stop any currently playing music (kills entire pipeline process group)."""
     global _music_process
     if _music_process and _music_process.poll() is None:
-        _music_process.terminate()
-        _music_process.wait()
+        try:
+            os.killpg(os.getpgid(_music_process.pid), signal.SIGTERM)
+        except Exception:
+            _music_process.terminate()
+        try:
+            _music_process.wait(timeout=2)
+        except Exception:
+            pass
         print("[music] Stopped")
     _music_process = None
 
