@@ -235,7 +235,7 @@ def fetch_weather(city=CITY):
         return {"city": city, "temp": "--", "description": "Unavailable"}
 
 # ── Speech output ──────────────────────────────────────────────────────────────
-VOICE = "en-US-AnaNeural"   # change to any en-US-*Neural voice
+VOICE = "en-US-AvaNeural"   # change to any en-US-*Neural voice
 
 async def _edge_tts(text, path):
     try:
