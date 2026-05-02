@@ -369,6 +369,7 @@ _INTENT_SCHEMA = {
                 "set_reminder",
                 "tell_joke",
                 "daily_briefing",
+                "rotate_servo",
                 "unknown",
             ],
         },
@@ -392,6 +393,7 @@ Parse the user's command into EXACTLY ONE intent:
 - set_reminder: put the FULL reminder phrase in 'task' (e.g. "drink water in 30 minutes")
 - tell_joke: put a short, clean, funny joke in 'spoken_response'
 - daily_briefing: user wants a morning/daily summary
+- rotate_servo: user wants to rotate/turn the camera. Put the target angle (0-180) OR a relative instruction like "left 30" or "right 45" as a plain string in 'task'. Examples: "90" for center, "left 30", "right 45". If they say "center" or "straight" use "90".
 - unknown: anything else
 
 Keep spoken_response warm and encouraging (under 20 words), except for tell_joke where the joke itself goes in spoken_response."""
@@ -475,6 +477,21 @@ def keyword_fallback(command):
                     return {"intent":"remove_task","screen":"tasks","task":name,"spoken_response":""}
         return {"intent":"remove_task","screen":"tasks","task":"","spoken_response":""}
 
+    # Servo rotation
+    if any(w in cmd for w in ("rotate","turn","spin","look","face","swing")):
+        if any(w in cmd for w in ("left","counter")):
+            degs = re.search(r'(\d+)', cmd)
+            task = f"left {degs.group(1)}" if degs else "left 30"
+        elif any(w in cmd for w in ("right","clockwise")):
+            degs = re.search(r'(\d+)', cmd)
+            task = f"right {degs.group(1)}" if degs else "right 30"
+        elif any(w in cmd for w in ("center","centre","straight","forward","middle")):
+            task = "90"
+        else:
+            degs = re.search(r'(\d+)', cmd)
+            task = degs.group(1) if degs else "90"
+        return {"intent":"rotate_servo","screen":"clock","task":task,"spoken_response":""}
+
     # Info
     if any(w in cmd for w in ("weather","temperature","forecast","outside","wear")):
         return {"intent":"get_weather","screen":"weather","task":"","spoken_response":""}
@@ -556,6 +573,29 @@ def execute_action(action):
             state["screen"] = "clock"
             state["face"]   = "idle"
             action["spoken_response"] = "Timer cancelled! Take it easy."
+
+        elif intent == "rotate_servo":
+            t = task_name.lower().strip()
+            # Parse "left N", "right N", plain "N", or "center"
+            left_m  = re.match(r'left\s+(\d+)', t)
+            right_m = re.match(r'right\s+(\d+)', t)
+            if left_m:
+                new_angle = max(SERVO_MIN_ANGLE, _servo_angle - int(left_m.group(1)))
+                direction_word = f"left {left_m.group(1)} degrees"
+            elif right_m:
+                new_angle = min(SERVO_MAX_ANGLE, _servo_angle + int(right_m.group(1)))
+                direction_word = f"right {right_m.group(1)} degrees"
+            else:
+                # Treat as absolute angle
+                try:
+                    new_angle = int(re.search(r'\d+', t).group())
+                except (AttributeError, ValueError):
+                    new_angle = SERVO_START_ANGLE
+                direction_word = f"to {new_angle} degrees"
+            state["screen"] = "clock"
+            action["spoken_response"] = f"Rotating {direction_word}!"
+            # move_servo is called outside the lock below
+            action["_servo_angle"] = new_angle
 
         elif intent == "set_reminder":
             minutes = _parse_duration_minutes(task_name) or 30
@@ -990,6 +1030,10 @@ def voice_loop():
         )
         if not needs_followup:
             execute_action(action)
+
+        # If the action requested a servo move, do it outside the lock
+        if "_servo_angle" in action:
+            move_servo(action["_servo_angle"])
 
         spoken = handle_multi_turn(recognizer, action)
         with state_lock:
