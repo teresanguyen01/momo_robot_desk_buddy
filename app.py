@@ -1139,9 +1139,6 @@ def voice_loop():
         if "_servo_angle" in action:
             move_servo(action["_servo_angle"])
 
-        # Music actions — run outside the lock so they don't block state
-        if "_play_song" in action and action["_play_song"]:
-            threading.Thread(target=play_music, args=(action["_play_song"],), daemon=True).start()
         if "_stop_music" in action:
             stop_music()
 
@@ -1151,6 +1148,10 @@ def voice_loop():
             state["last_spoken"] = spoken
 
         speak(spoken)
+
+        # Start music AFTER TTS finishes so aplay device isn't busy
+        if "_play_song" in action and action["_play_song"]:
+            threading.Thread(target=play_music, args=(action["_play_song"],), daemon=True).start()
 
         with state_lock:
             state["voice_state"] = "idle"
