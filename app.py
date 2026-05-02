@@ -258,14 +258,14 @@ def speak(text):
         if subprocess.run("which mpg123", shell=True, capture_output=True).returncode == 0:
             subprocess.run(f"mpg123 -q {mp3}", shell=True)
         else:
-            subprocess.run(f"aplay -D default {mp3}", shell=True)
+            subprocess.run(f"aplay -D pulse {mp3}", shell=True)
         return
 
     print("[speak] falling back to pico2wave")
     if subprocess.run(f'pico2wave -w {wav} "{safe}"', shell=True).returncode != 0:
         subprocess.run(f'espeak -a 200 -s 150 "{safe}" -w {wav}', shell=True)
 
-    subprocess.run(f"aplay -D default {wav}", shell=True)
+    subprocess.run(f"aplay -D pulse {wav}", shell=True)
 
 # ── Music playback ────────────────────────────────────────────────────────────
 _music_process = None   # holds the running yt-dlp | mpg123 subprocess
@@ -293,11 +293,15 @@ def play_music(song_name):
         print("[music] ERROR: aplay not found")
         return
 
+    # Use paplay (PulseAudio/PipeWire native) to avoid ALSA dmix conflicts
+    paplay = subprocess.run(["which", "paplay"], capture_output=True, text=True).stdout.strip()
+    player = paplay if paplay else f"{aplay} -D pulse"
+    player_args = "--raw --channels=2 --rate=44100 --format=s16le" if paplay else ""
     cmd = (
         f'{ytdlp} -f bestaudio --no-playlist '
         f'"ytsearch1:{song_name}" -o - 2>/tmp/momo_ytdlp.log | '
-        f'{ffmpeg} -i pipe:0 -f wav -ar 44100 -ac 2 pipe:1 2>/tmp/momo_ffmpeg.log | '
-        f'{aplay} -D default'
+        f'{ffmpeg} -i pipe:0 -f s16le -ar 44100 -ac 2 pipe:1 2>/tmp/momo_ffmpeg.log | '
+        f'{player} {player_args}'
     )
     # Use a new process group so stop_music() can kill the whole pipeline (shell + children)
     _music_process = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
