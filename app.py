@@ -266,6 +266,33 @@ def speak(text):
 
     subprocess.run(f"aplay -D plughw:0,0 {wav}", shell=True)
 
+# ── Music playback ────────────────────────────────────────────────────────────
+_music_process = None   # holds the running yt-dlp | mpg123 subprocess
+
+def play_music(song_name):
+    """Search YouTube for song_name and stream it via mpg123. Non-blocking."""
+    global _music_process
+    stop_music()   # stop anything already playing
+    print(f"[music] Searching for: {song_name}")
+    cmd = (
+        f'yt-dlp -f bestaudio --no-playlist '
+        f'"ytsearch1:{song_name}" -o - 2>/dev/null | mpg123 -q -a plughw:0,0'
+    )
+    _music_process = subprocess.Popen(cmd, shell=True)
+    print(f"[music] Playing: {song_name}")
+
+def stop_music():
+    """Stop any currently playing music."""
+    global _music_process
+    if _music_process and _music_process.poll() is None:
+        _music_process.terminate()
+        _music_process.wait()
+        print("[music] Stopped")
+    _music_process = None
+
+def is_music_playing():
+    return _music_process is not None and _music_process.poll() is None
+
 # ── Spoken response helpers ────────────────────────────────────────────────────
 def _time_response():
     hour, minute, ampm = int(time.strftime("%I")), time.strftime("%M"), time.strftime("%p").lower()
@@ -370,6 +397,8 @@ _INTENT_SCHEMA = {
                 "tell_joke",
                 "daily_briefing",
                 "rotate_servo",
+                "play_music",
+                "stop_music",
                 "unknown",
             ],
         },
@@ -394,6 +423,8 @@ Parse the user's command into EXACTLY ONE intent:
 - tell_joke: put a short, clean, funny joke in 'spoken_response'
 - daily_briefing: user wants a morning/daily summary
 - rotate_servo: user wants to rotate/turn the camera. Put the target angle (0-180) OR a relative instruction like "left 30" or "right 45" as a plain string in 'task'. Examples: "90" for center, "left 30", "right 45". If they say "center" or "straight" use "90".
+- play_music: user wants to play a song. Put the song/artist name in 'task'.
+- stop_music: user wants to stop the music.
 - unknown: anything else
 
 Keep spoken_response warm and encouraging (under 20 words), except for tell_joke where the joke itself goes in spoken_response."""
@@ -477,6 +508,18 @@ def keyword_fallback(command):
                     return {"intent":"remove_task","screen":"tasks","task":name,"spoken_response":""}
         return {"intent":"remove_task","screen":"tasks","task":"","spoken_response":""}
 
+    # Music
+    if any(w in cmd for w in ("play","put on","start playing")):
+        # Strip trigger words to get the song name
+        for kw in ("play some","play","put on","start playing"):
+            if kw in cmd:
+                song = cmd.split(kw, 1)[-1].strip().strip(".,!?")
+                if song:
+                    return {"intent":"play_music","screen":"clock","task":song,"spoken_response":""}
+        return {"intent":"play_music","screen":"clock","task":"","spoken_response":""}
+    if any(w in cmd for w in ("stop music","stop playing","pause","mute","quiet","silence")):
+        return {"intent":"stop_music","screen":"clock","task":"","spoken_response":""}
+
     # Servo rotation
     if any(w in cmd for w in ("rotate","turn","spin","look","face","swing")):
         if any(w in cmd for w in ("left","counter")):
@@ -501,7 +544,7 @@ def keyword_fallback(command):
         return {"intent":"show_clock","screen":"clock","task":"","spoken_response":_time_response()}
 
     return {"intent":"unknown","screen":"clock","task":"",
-            "spoken_response":"Hm, I didn't get that."}
+            "spoken_response":"I didn't get that."}
 
 # ── Intent execution ───────────────────────────────────────────────────────────
 def execute_action(action):
@@ -596,6 +639,23 @@ def execute_action(action):
             action["spoken_response"] = f"Rotating {direction_word}!"
             # move_servo is called outside the lock below
             action["_servo_angle"] = new_angle
+
+        elif intent == "play_music":
+            state["screen"] = "clock"
+            state["face"]   = "happy"
+            if task_name:
+                action["spoken_response"] = f"On it! Playing {task_name}."
+            else:
+                action["spoken_response"] = "What song should I play?"
+            # actual play_music() call happens outside the lock below
+            action["_play_song"] = task_name
+
+        elif intent == "stop_music":
+            state["screen"] = "clock"
+            state["face"]   = "idle"
+            action["spoken_response"] = "Stopping the music!"
+            # actual stop_music() call happens outside the lock below
+            action["_stop_music"] = True
 
         elif intent == "set_reminder":
             minutes = _parse_duration_minutes(task_name) or 30
@@ -1051,6 +1111,12 @@ def voice_loop():
         # If the action requested a servo move, do it outside the lock
         if "_servo_angle" in action:
             move_servo(action["_servo_angle"])
+
+        # Music actions — run outside the lock so they don't block state
+        if "_play_song" in action and action["_play_song"]:
+            threading.Thread(target=play_music, args=(action["_play_song"],), daemon=True).start()
+        if "_stop_music" in action:
+            stop_music()
 
         spoken = handle_multi_turn(recognizer, action)
         with state_lock:
