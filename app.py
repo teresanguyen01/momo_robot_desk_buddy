@@ -292,6 +292,10 @@ def play_music(song_name):
         print("[music] ERROR: aplay not found")
         return
 
+    # Kill any lingering aplay process (e.g. TTS that just finished) so device is free
+    subprocess.run(["pkill", "-x", "aplay"], capture_output=True)
+    time.sleep(0.4)
+
     cmd = (
         f'{ytdlp} -f bestaudio --no-playlist '
         f'"ytsearch1:{song_name}" -o - 2>/tmp/momo_ytdlp.log | '
