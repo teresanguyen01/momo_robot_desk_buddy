@@ -270,16 +270,21 @@ def speak(text):
 _music_process = None   # holds the running yt-dlp | mpg123 subprocess
 
 def play_music(song_name):
-    """Search YouTube for song_name and stream it via mpg123. Non-blocking."""
+    """Search YouTube for song_name, convert with ffmpeg, play via aplay."""
     global _music_process
-    stop_music()   # stop anything already playing
+    stop_music()
     print(f"[music] Searching for: {song_name}")
+    # yt-dlp fetches the raw audio stream (any format)
+    # ffmpeg converts it to WAV on the fly
+    # aplay sends it to the speaker (confirmed working device)
     cmd = (
         f'yt-dlp -f bestaudio --no-playlist '
-        f'"ytsearch1:{song_name}" -o - 2>/dev/null | mpg123 -q -a plughw:0,0 -'
+        f'"ytsearch1:{song_name}" -o - 2>/tmp/momo_ytdlp.log | '
+        f'ffmpeg -i pipe:0 -f wav -ar 44100 -ac 2 pipe:1 2>/tmp/momo_ffmpeg.log | '
+        f'aplay -D plughw:0,0'
     )
     _music_process = subprocess.Popen(cmd, shell=True)
-    print(f"[music] Playing: {song_name}")
+    print(f"[music] Playing: {song_name} (logs: /tmp/momo_ytdlp.log, /tmp/momo_ffmpeg.log)")
 
 def stop_music():
     """Stop any currently playing music."""
