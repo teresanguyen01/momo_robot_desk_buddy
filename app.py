@@ -1178,8 +1178,9 @@ def api_state():
             "presence":    state["presence"],
             "sleep_mode":  state["sleep_mode"],
             "servo":       dict(state["servo"]),
-            "time":        time.strftime("%I:%M %p"),
-            "date":        time.strftime("%A, %B %d"),
+            "time":          time.strftime("%I:%M %p"),
+            "date":          time.strftime("%A, %B %d"),
+            "music_playing": is_music_playing(),
         }
     return jsonify(snapshot)
 
@@ -1248,6 +1249,11 @@ def api_timer_cancel():
     with state_lock:
         state["timer"]["active"] = False
         state["face"] = "idle"
+    return jsonify({"ok": True})
+
+@app.route("/api/music/stop", methods=["POST"])
+def api_music_stop():
+    stop_music()
     return jsonify({"ok": True})
 
 # ── Startup ────────────────────────────────────────────────────────────────────

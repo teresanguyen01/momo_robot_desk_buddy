@@ -173,6 +173,22 @@ html, body {
   animation: sleeping-pulse 3s ease-in-out infinite;
 }
 
+/* music stop button */
+#music-stop-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 0;
+  background: #c0392b;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+#music-stop-btn:active { background: #922b21; }
+
 /* mic status dot */
 #mic-dot {
   width: 8px;

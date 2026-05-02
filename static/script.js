@@ -85,6 +85,9 @@ function renderState(state) {
   updateBanner(state.voice_state);
   updateMicDot(state.voice_state);
 
+  // ── music stop button
+  document.getElementById("music-stop-btn").classList.toggle("hidden", !state.music_playing);
+
   // ── presence dot
   updatePresence(state.presence);
 
@@ -197,6 +200,12 @@ async function startTimer(minutes, label) {
 async function cancelTimer() {
   try { await fetch("/api/timer/cancel", { method: "POST" }); }
   catch (e) { console.error("[momo] cancelTimer:", e); }
+  loadState();
+}
+
+async function stopMusicNow() {
+  try { await fetch("/api/music/stop", { method: "POST" }); }
+  catch (e) { console.error("[momo] stopMusic:", e); }
   loadState();
 }
 
