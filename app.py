@@ -508,17 +508,23 @@ def keyword_fallback(command):
                     return {"intent":"remove_task","screen":"tasks","task":name,"spoken_response":""}
         return {"intent":"remove_task","screen":"tasks","task":"","spoken_response":""}
 
-    # Music
-    if any(w in cmd for w in ("play","put on","start playing")):
-        # Strip trigger words to get the song name
-        for kw in ("play some","play","put on","start playing"):
+    # Music — stop check first so "stop playing X" doesn't match play
+    if any(w in cmd for w in ("stop music","stop playing","stop the music","pause","mute","quiet","silence","no more music")):
+        return {"intent":"stop_music","screen":"clock","task":"","spoken_response":""}
+
+    # Music — play (broad match so song names like "Stateside" aren't lost)
+    _play_triggers = ("play","put on","start playing","listen to","i want to hear",
+                      "can you play","could you play","please play","queue")
+    if any(w in cmd for w in _play_triggers):
+        for kw in ("please play","can you play","could you play","i want to hear",
+                   "listen to","start playing","put on","play some","play"):
             if kw in cmd:
                 song = cmd.split(kw, 1)[-1].strip().strip(".,!?")
                 if song:
+                    print(f"[music] Extracted song name: '{song}'")
                     return {"intent":"play_music","screen":"clock","task":song,"spoken_response":""}
+        # Trigger word found but no song name after it — ask
         return {"intent":"play_music","screen":"clock","task":"","spoken_response":""}
-    if any(w in cmd for w in ("stop music","stop playing","pause","mute","quiet","silence")):
-        return {"intent":"stop_music","screen":"clock","task":"","spoken_response":""}
 
     # Servo rotation
     if any(w in cmd for w in ("rotate","turn","spin","look","face","swing")):
@@ -1085,6 +1091,7 @@ def voice_loop():
                 continue
 
         command = after_wake
+        print(f"[voice] Command to parse: '{command}'")
 
         # ── Check for sleep command before processing normally ─────────────
         if _is_sleep_command(command):
