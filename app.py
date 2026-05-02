@@ -274,14 +274,29 @@ def play_music(song_name):
     global _music_process
     stop_music()
     print(f"[music] Searching for: {song_name}")
-    # yt-dlp fetches the raw audio stream (any format)
-    # ffmpeg converts it to WAV on the fly
-    # aplay sends it to the speaker (confirmed working device)
+
+    # Resolve full paths so Flask's restricted PATH doesn't break things
+    ytdlp  = subprocess.run(["which", "yt-dlp"],  capture_output=True, text=True).stdout.strip()
+    ffmpeg = subprocess.run(["which", "ffmpeg"],  capture_output=True, text=True).stdout.strip()
+    aplay  = subprocess.run(["which", "aplay"],   capture_output=True, text=True).stdout.strip()
+
+    print(f"[music] yt-dlp={ytdlp!r}  ffmpeg={ffmpeg!r}  aplay={aplay!r}")
+
+    if not ytdlp:
+        print("[music] ERROR: yt-dlp not found — install with: pip install yt-dlp")
+        return
+    if not ffmpeg:
+        print("[music] ERROR: ffmpeg not found — install with: sudo apt install ffmpeg -y")
+        return
+    if not aplay:
+        print("[music] ERROR: aplay not found")
+        return
+
     cmd = (
-        f'yt-dlp -f bestaudio --no-playlist '
+        f'{ytdlp} -f bestaudio --no-playlist '
         f'"ytsearch1:{song_name}" -o - 2>/tmp/momo_ytdlp.log | '
-        f'ffmpeg -i pipe:0 -f wav -ar 44100 -ac 2 pipe:1 2>/tmp/momo_ffmpeg.log | '
-        f'aplay -D plughw:0,0'
+        f'{ffmpeg} -i pipe:0 -f wav -ar 44100 -ac 2 pipe:1 2>/tmp/momo_ffmpeg.log | '
+        f'{aplay} -D plughw:0,0'
     )
     _music_process = subprocess.Popen(cmd, shell=True)
     print(f"[music] Playing: {song_name} (logs: /tmp/momo_ytdlp.log, /tmp/momo_ffmpeg.log)")
