@@ -160,8 +160,8 @@ SERVO_REVERSE    = False  # set True if servo moves opposite to face direction
 SERVO_START_ANGLE = 90   # degrees — center position sent on startup
 SERVO_MIN_ANGLE  = 0
 SERVO_MAX_ANGLE  = 180
-SERVO_DEAD_ZONE  = 40    # px — ignore face offset smaller than this (prevents jitter)
-SERVO_STEP_SIZE  = 2     # degrees to move per camera frame (lower = smoother)
+SERVO_DEAD_ZONE  = 25    # px — ignore face offset smaller than this (prevents jitter)
+SERVO_STEP_SIZE  = 4     # degrees to move per camera frame (higher = faster tracking)
 
 # ── Flask ──────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -767,8 +767,13 @@ def camera_thread():
             return
         print(f"[camera] Camera opened on index {CAMERA_INDEX}")
 
-        cascade = cv2.CascadeClassifier(
+        # Face detector — scaleFactor 1.1 catches more angles, minNeighbors 3 is more lenient
+        face_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        )
+        # Full-body detector — fallback when face isn't frontal (e.g. looking sideways)
+        body_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_fullbody.xml"
         )
         was_present   = True
         absent_frames = 0
@@ -780,13 +785,32 @@ def camera_thread():
                 time.sleep(2)
                 continue
 
-            frame_h, frame_w = frame.shape[:2]
-            frame_center_x   = frame_w // 2   # horizontal midpoint of the camera frame
+            # Resize to 320×240 — faster detection, Pi can handle it easily
+            small  = cv2.resize(frame, (320, 240))
+            frame_center_x = 320 // 2
 
-            gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
+            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+            # equalizeHist boosts contrast so the detector finds faces in dim light
+            gray = cv2.equalizeHist(gray)
 
-            # ── Presence logic (unchanged) ─────────────────────────────────────
+            # Try face detection first (more precise for tracking)
+            faces = face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.1,   # 1.1 = finer search steps, catches more angles (was 1.3)
+                minNeighbors=3,    # 3 = more lenient, fewer missed detections (was 5)
+                minSize=(40, 40),  # ignore tiny blobs that are probably not a face
+            )
+
+            # If no face found, try full-body detection as fallback
+            if len(faces) == 0:
+                faces = body_cascade.detectMultiScale(
+                    gray,
+                    scaleFactor=1.1,
+                    minNeighbors=3,
+                    minSize=(40, 80),
+                )
+
+            # ── Presence logic ─────────────────────────────────────────────────
             present_now = len(faces) > 0
             if not present_now:
                 absent_frames += 1
@@ -811,34 +835,31 @@ def camera_thread():
             was_present = present_now
 
             # ── Servo face-tracking ────────────────────────────────────────────
-            # Only track when servo is enabled, connected, and Momo is not asleep.
             if SERVO_ENABLED and len(faces) > 0 and not sleeping:
 
-                # Pick the largest detected face (most likely the user)
+                # Pick the largest detected region (most likely the main person)
                 largest = max(faces, key=lambda f: f[2] * f[3])
                 fx, fy, fw, fh = largest
 
-                # Calculate the horizontal center of that face
                 face_center_x = fx + fw // 2
+                offset        = face_center_x - frame_center_x
 
-                # How far left/right is the face from the frame center?
-                offset = face_center_x - frame_center_x
-
-                # Only move if offset exceeds the dead zone (avoids jitter)
                 if abs(offset) > SERVO_DEAD_ZONE:
                     if offset < 0:
-                        # Face is LEFT of center → turn servo left
                         direction = -1 if not SERVO_REVERSE else 1
-                        print("[camera] Face left, moving servo")
+                        print(f"[camera] Face left (offset {offset}px), moving servo")
                     else:
-                        # Face is RIGHT of center → turn servo right
                         direction = 1 if not SERVO_REVERSE else -1
-                        print("[camera] Face right, moving servo")
+                        print(f"[camera] Face right (offset {offset}px), moving servo")
 
-                    new_angle = _servo_angle + direction * SERVO_STEP_SIZE
+                    # Move faster the further the face is from center
+                    # (proportional control — smoother than fixed step)
+                    scale     = min(abs(offset) / frame_center_x, 1.0)
+                    step      = max(1, int(SERVO_STEP_SIZE * scale * 2))
+                    new_angle = _servo_angle + direction * step
                     move_servo(new_angle)
 
-            time.sleep(0.5)   # check ~2× per second; fast enough to track, slow enough to be smooth
+            time.sleep(0.15)   # ~6 frames/sec — fast enough to track smoothly
 
     except Exception as e:
         print(f"[camera] Error: {e}")
