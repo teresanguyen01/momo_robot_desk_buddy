@@ -149,7 +149,7 @@ TASKS_FILE       = os.path.join(os.path.dirname(__file__), "tasks.json")
 OPENAI_API_KEY   = os.environ.get("OPENAI_API_KEY", "")
 VOICE_ENABLED    = True
 MIC_DEVICE_INDEX = None   # kept for reference; audio capture uses ALSA_MIC_DEVICE directly
-ALSA_MIC_DEVICE  = "plughw:1,0"   # USB PnP mic — confirmed working with arecord
+ALSA_MIC_DEVICE  = "pulse"   # PipeWire-pulse (owns all hardware devices on this Pi)
 CAMERA_ENABLED   = True
 CAMERA_INDEX     = 0      # Brio 100 webcam (OpenCV index)
 
