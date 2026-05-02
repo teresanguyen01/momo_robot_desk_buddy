@@ -6,6 +6,7 @@ Set: export OPENAI_API_KEY=sk-...
 import random
 import os
 import signal
+import atexit
 import re
 import json
 import time
@@ -189,6 +190,7 @@ state = {
     "reminders": [],    # [{"id": int, "text": str, "fire_at": float, "fired": bool}]
     "presence":  True,  # True = someone detected at desk
     "sleep_mode": False, # True = Momo is asleep, only wakes on wake command
+    "music_song": "",    # non-empty string while music is playing
     "servo": {
         "enabled":   SERVO_ENABLED,
         "connected": False,
@@ -305,6 +307,8 @@ def play_music(song_name):
     )
     # Use a new process group so stop_music() can kill the whole pipeline (shell + children)
     _music_process = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
+    with state_lock:
+        state["music_song"] = song_name
     print(f"[music] Playing: {song_name} (logs: /tmp/momo_ytdlp.log, /tmp/momo_ffmpeg.log)")
 
 def stop_music():
@@ -321,6 +325,8 @@ def stop_music():
             pass
         print("[music] Stopped")
     _music_process = None
+    with state_lock:
+        state["music_song"] = ""
 
 def is_music_playing():
     return _music_process is not None and _music_process.poll() is None
@@ -1195,7 +1201,7 @@ def api_state():
             "servo":       dict(state["servo"]),
             "time":          time.strftime("%I:%M %p"),
             "date":          time.strftime("%A, %B %d"),
-            "music_playing": is_music_playing(),
+            "music_song":    state["music_song"],
         }
     return jsonify(snapshot)
 
@@ -1272,6 +1278,8 @@ def api_music_stop():
     return jsonify({"ok": True})
 
 # ── Startup ────────────────────────────────────────────────────────────────────
+atexit.register(stop_music)   # kill music pipeline on any exit (Ctrl+C, crash, etc.)
+
 if __name__ == "__main__":
     with state_lock:
         state["tasks"] = load_tasks()

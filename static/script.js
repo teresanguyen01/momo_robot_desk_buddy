@@ -85,8 +85,8 @@ function renderState(state) {
   updateBanner(state.voice_state);
   updateMicDot(state.voice_state);
 
-  // ── music stop button
-  document.getElementById("music-stop-btn").classList.toggle("hidden", !state.music_playing);
+  // ── music banner + stop button
+  updateMusicBanner(state.music_song);
 
   // ── presence dot
   updatePresence(state.presence);
@@ -201,6 +201,19 @@ async function cancelTimer() {
   try { await fetch("/api/timer/cancel", { method: "POST" }); }
   catch (e) { console.error("[momo] cancelTimer:", e); }
   loadState();
+}
+
+function updateMusicBanner(song) {
+  const banner      = document.getElementById("music-banner");
+  const voiceBanner = document.getElementById("voice-banner");
+  const btn         = document.getElementById("music-stop-btn");
+  const playing     = !!song;
+  banner.classList.toggle("visible", playing);
+  voiceBanner.classList.toggle("music-up", playing);
+  btn.classList.toggle("hidden", !playing);
+  if (playing) {
+    document.getElementById("music-banner-song").innerText = song;
+  }
 }
 
 async function stopMusicNow() {
