@@ -276,7 +276,7 @@ def play_music(song_name):
     print(f"[music] Searching for: {song_name}")
     cmd = (
         f'yt-dlp -f bestaudio --no-playlist '
-        f'"ytsearch1:{song_name}" -o - 2>/dev/null | mpg123 -q -a plughw:0,0'
+        f'"ytsearch1:{song_name}" -o - 2>/dev/null | mpg123 -q -a plughw:0,0 -'
     )
     _music_process = subprocess.Popen(cmd, shell=True)
     print(f"[music] Playing: {song_name}")
