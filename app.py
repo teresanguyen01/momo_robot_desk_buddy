@@ -300,7 +300,7 @@ def play_music(song_name):
     cmd = (
         f'{ytdlp} -f bestaudio --no-playlist '
         f'"ytsearch1:{song_name}" -o - 2>/tmp/momo_ytdlp.log | '
-        f'{ffmpeg} -i pipe:0 -f s16le -ar 44100 -ac 2 pipe:1 2>/tmp/momo_ffmpeg.log | '
+        f'{ffmpeg} -hide_banner -loglevel error -i pipe:0 -f s16le -ar 44100 -ac 2 pipe:1 2>/tmp/momo_ffmpeg.log | '
         f'{player} {player_args}'
     )
     # Use a new process group so stop_music() can kill the whole pipeline (shell + children)
@@ -1046,19 +1046,21 @@ def _is_wake_command(text):
 WAKE_WORD = "momo"
 
 def _record_and_transcribe(recognizer, duration=5):
-    """Record audio via arecord (bypasses PyAudio) and transcribe with Google STT."""
+    """Record audio via parecord (PipeWire-pulse) and transcribe with Google STT."""
     wav = "/tmp/momo_listen.wav"
     try:
+        # parecord talks directly to PipeWire-pulse; timeout stops it after N seconds
         result = subprocess.run(
-            ["arecord", "-D", ALSA_MIC_DEVICE, "-f", "S16_LE",
-             "-r", "16000", "-c", "1", "-d", str(duration), wav],
+            ["timeout", str(duration), "parecord",
+             "--channels=1", "--rate=16000", "--format=s16le", wav],
             capture_output=True, timeout=duration + 3
         )
-        if result.returncode != 0:
-            print(f"[voice] arecord failed: {result.stderr.decode().strip()}")
+        # returncode 124 = timeout killed it (expected); 0 = finished early — both are fine
+        if result.returncode not in (0, 124):
+            print(f"[voice] parecord failed: {result.stderr.decode().strip()}")
             return None
     except Exception as e:
-        print(f"[voice] arecord error: {e}")
+        print(f"[voice] record error: {e}")
         return None
     try:
         with sr.AudioFile(wav) as source:
