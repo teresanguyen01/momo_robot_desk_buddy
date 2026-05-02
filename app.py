@@ -817,6 +817,10 @@ def camera_thread():
         )
         was_present   = True
         absent_frames = 0
+        # Track how long the person has been gone so we only greet after a real absence
+        # (not a brief dropout during servo tracking). ~20 frames × 0.15s = ~3 seconds.
+        GONE_THRESHOLD = 20
+        gone_frames    = 0
         print("[camera] Presence detection + face tracking active")
 
         while True:
@@ -836,9 +840,9 @@ def camera_thread():
             # Try face detection first (more precise for tracking)
             faces = face_cascade.detectMultiScale(
                 gray,
-                scaleFactor=1.1,   # 1.1 = finer search steps, catches more angles (was 1.3)
-                minNeighbors=3,    # 3 = more lenient, fewer missed detections (was 5)
-                minSize=(40, 40),  # ignore tiny blobs that are probably not a face
+                scaleFactor=1.1,
+                minNeighbors=3,
+                minSize=(40, 40),
             )
 
             # If no face found, try full-body detection as fallback
@@ -851,26 +855,39 @@ def camera_thread():
                 )
 
             # ── Presence logic ─────────────────────────────────────────────────
-            present_now = len(faces) > 0
-            if not present_now:
-                absent_frames += 1
-                present_now = absent_frames < 4
-            else:
+            detected = len(faces) > 0
+
+            if detected:
                 absent_frames = 0
+                gone_frames   = 0
+            else:
+                absent_frames += 1
+
+            # Still count as present for a few frames to avoid flickering
+            present_now = detected or absent_frames < 4
+
+            if not present_now:
+                gone_frames += 1
+            else:
+                gone_frames = 0
 
             with state_lock:
                 sleeping = state["sleep_mode"]
                 state["presence"] = present_now
-                if not present_now and state["face"] in ("idle", "happy", "excited"):
+                # Face/eyes are ONLY controlled by sleep_mode.
+                # Presence detection no longer opens or closes the eyes.
+                if sleeping and state["face"] != "sleeping":
                     state["face"] = "sleeping"
-                elif present_now and state["face"] == "sleeping":
+                elif not sleeping and state["face"] == "sleeping":
                     state["face"] = "idle"
 
-            if present_now and not was_present:
-                greeting = _presence_greeting()
-                threading.Thread(target=speak, args=(greeting,), daemon=True).start()
+            # Only greet when returning after a sustained real absence (not a brief dropout)
+            if present_now and not was_present and gone_frames >= GONE_THRESHOLD:
+                # greeting = _presence_greeting()
+                # threading.Thread(target=speak, args=(greeting,), daemon=True).start()
                 with state_lock:
-                    state["face"] = "happy"
+                    if not state["sleep_mode"]:
+                        state["face"] = "happy"
 
             was_present = present_now
 
