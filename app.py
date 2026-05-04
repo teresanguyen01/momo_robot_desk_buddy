@@ -97,6 +97,7 @@ OPENAI_API_KEY   = os.environ.get("OPENAI_API_KEY", "")
 VOICE_ENABLED    = True
 MIC_DEVICE_INDEX = None   # kept for reference; audio capture uses ALSA_MIC_DEVICE directly
 ALSA_MIC_DEVICE  = "pulse"   # PipeWire-pulse (owns all hardware devices on this Pi)
+MIC_BOOST_PERCENT = 150      # system mic gain % (100 = default, 150–200 = louder pickup)
 CAMERA_ENABLED   = True
 CAMERA_INDEX     = 0      # Brio 100 webcam (OpenCV index)
 
@@ -1052,6 +1053,17 @@ def _record_and_transcribe(recognizer, duration=5):
 def voice_loop():
     recognizer = sr.Recognizer()
     print(f"[voice] Ready — say '{WAKE_WORD} <command>'")
+
+    # Boost system mic gain so quiet speech is picked up more reliably
+    if MIC_BOOST_PERCENT != 100:
+        result = subprocess.run(
+            ["pactl", "set-source-volume", "@DEFAULT_SOURCE@", f"{MIC_BOOST_PERCENT}%"],
+            capture_output=True
+        )
+        if result.returncode == 0:
+            print(f"[voice] Mic gain set to {MIC_BOOST_PERCENT}%")
+        else:
+            print(f"[voice] Could not set mic gain: {result.stderr.decode().strip()}")
 
     time.sleep(1.5)
     speak(_startup_greeting())
