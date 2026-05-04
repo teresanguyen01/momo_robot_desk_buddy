@@ -17,102 +17,47 @@ import requests
 from flask import Flask, render_template, jsonify, request
 
 JOKES = [
-    "Why did the computer get cold? It forgot to close its Windows.",
-    "Why do programmers prefer dark mode? Because light attracts bugs.",
-    "Why did the robot go on vacation? It needed to recharge.",
-    "What’s a computer’s favorite snack? Microchips.",
-    "Why don’t robots panic? They keep their cool under pressure.",
-    "Why was the math book sad? It had too many problems.",
-    "Why did the Wi-Fi break up? Too many weak connections.",
-    "What do you call a singing laptop? A Dell.",
-    "Why was the keyboard so quiet? It lost its keys.",
-    "Why did the robot cross the road? Because it was programmed to.",
-    "Why don’t scientists trust atoms? They make up everything.",
-    "Why was the phone wearing glasses? It lost its contacts.",
-    "What’s a robot’s favorite type of music? Heavy metal.",
-    "Why was the computer tired? It had too many tabs open.",
-    "What do you call a lazy robot? Slobot.",
-    "Why did the computer go to therapy? Too many issues.",
-    "What’s a robot’s favorite game? Byte-sized puzzles.",
-    "Why did the programmer quit? Because he didn’t get arrays.",
-    "Why don’t robots get lost? They follow directions perfectly.",
-    "What do you call a smart toaster? Bread-y intelligent.",
-    "Why did the robot blush? It saw the motherboard.",
-    "Why did the computer sneeze? It had a virus.",
-    "Why was the robot happy? It got an upgrade.",
-    "What do robots eat for lunch? RAM-en noodles.",
-    "Why did the screen break up with the keyboard? No chemistry.",
-    "What do you call a robot detective? Sherlock Ohms.",
-    "Why did the robot fail school? It had no class.",
-    "Why was the computer late? It had a slow boot.",
-    "Why don’t robots lie? They can’t process it.",
-    "What’s a robot’s favorite drink? Oil-der coffee.",
-    "Why did the CPU go to school? To get smarter.",
-    "Why was the robot nervous? It had too many bugs.",
-    "What do you call a robot chef? A byte cook.",
-    "Why did the computer freeze? It left its Windows open.",
-    "Why did the robot dance? It heard a good beat.",
-    "What’s a robot’s favorite sport? Circuit training.",
-    "Why was the laptop so calm? It had no stress RAM.",
-    "Why did the robot get promoted? It worked efficiently.",
-    "Why do robots love parties? Good vibes and signals.",
-    "What’s a robot’s favorite subject? Algorithm.",
-    "Why did the computer cry? It lost its data.",
-    "What do you call a robot comedian? A laugh-bot.",
-    "Why was the robot always early? It had perfect timing.",
-    "Why did the monitor go to school? To improve resolution.",
-    "What do robots do on weekends? Recharge.",
-    "Why did the robot go jogging? To stay in shape.",
-    "Why don’t robots gossip? They avoid leaks.",
-    "Why did the computer get glasses? To improve vision.",
-    "Why did the robot get a pet? It wanted a companion program.",
-    "Why did the computer sleep? Low battery.",
-    "Why was the robot laughing? It got a funny input.",
-    "What’s a robot’s favorite movie? The Matrix.",
-    "Why did the robot sit down? It needed a break cycle.",
-    "Why did the computer run? It had malware.",
-    "Why was the robot friendly? It had good connections.",
-    "Why don’t robots argue? They follow logic.",
-    "Why did the computer go outside? Fresh air download.",
-    "Why was the robot smiling? It felt positive.",
-    "Why was the computer strong? High processing power.",
-    "Why did the robot help? It was programmed to assist.",
-    "Why was the robot fast? It had high-speed circuits.",
-    "Why did the computer laugh? It got a good joke.exe",
-    "Why was the robot curious? It loved new data.",
-    "Why did the robot relax? It needed downtime.",
-    "Why did the computer fail? Missing files.",
-    "Why was the robot excited? New update available.",
-    "Why did the robot read a book? To gain knowledge.",
-    "Why did the computer blink? It refreshed.",
-    "Why was the robot proud? It completed a task.",
-    "Why did the robot smile? Positive feedback loop.",
-    "Why was the computer slow? Too many processes.",
-    "Why did the robot celebrate? Task completed successfully.",
-    "Why did the computer rest? System overload.",
-    "Why was the robot helpful? Built that way.",
-    "Why did the computer wait? Loading...",
-    "Why did the robot sing? It had good output.",
-    "Why did the robot stand still? Idle mode.",
-    "Why did the computer hum? Running quietly.",
-    "Why did the robot wave? Friendly interface.",
-    "Why was the robot calm? Balanced system.",
-    "Why did the computer beep? Notification.",
-    "Why did the robot think? Processing...",
-    "Why was the robot bright? Good display.",
-    "Why did the computer blink? Screen refresh.",
-    "Why was the robot funny? Good code humor.",
-    "Why did the computer chill? Cooling system.",
-    "Why did the robot smile? Happy protocol.",
-    "Why was the robot kind? Friendly design.",
-    "Why did the computer pause? Buffering.",
-    "Why was the robot smart? Good algorithms.",
-    "Why did the robot nod? Acknowledged input.",
-    "Why was the computer neat? Organized files.",
-    "Why did the robot laugh? Funny signal.",
-    "Why was the robot relaxed? Low load.",
-    "Why did the computer relax? Idle state.",
-    "Why does Momo tell jokes? To make your day better."
+"My real-time system missed a deadline… now it’s just real-late.",
+"Hard real-time fails once and dies, soft real-time fails and hopes nobody noticed.",
+"My ISR is so fast, it interrupts my thoughts.",
+"I tried polling once… still waiting for it to be efficient.",
+"Interrupts are just hardware saying excuse me.",
+"Jitter is just your system having performance anxiety.",
+"Concurrency is easy until two things happen at the same time.",
+"I had a race condition… now I have two bugs.",
+"Threads are like roommates, they fight over shared resources.",
+"Mutexes are just polite arguments: after you.",
+"Deadlock is when everyone is waiting and nobody moves.",
+"Context switching is multitasking for CPUs.",
+"Shared variables are where friendships go to die.",
+"A lock without discipline is just a suggestion.",
+"Critical section: enter carefully, exit quickly.",
+"Mutex means my turn.",
+"Spinlock is are we there yet for CPUs.",
+"The scheduler is the real boss of your program.",
+"My scheduler has favorites, it’s called priority.",
+"Preemptive scheduling says you’re done now.",
+"Ready queue is where dreams wait.",
+"Flip-flops don’t flop, they just flip twice.",
+"D flip-flop is memory with a clock.",
+"Truth tables never lie, unlike your code.",
+"Setup time: don’t be late or else.",
+"Ethernet is WiFi with a leash.",
+"A switch doesn’t switch, it directs traffic.",
+"Routers are internet GPS devices.",
+"Packets are tiny envelopes of chaos.",
+"Ping is just are you alive.",
+"Bluetooth pairing is awkward introductions.",
+"Connected doesn’t mean working.",
+"Bluetooth replaces cables with confusion.",
+"ADC turns reality into numbers.",
+"DAC turns numbers into reality.",
+"Nyquist says sample twice or regret it.",
+"Capacitors are tiny batteries with trust issues.",
+"Noise is system gossip.",
+"Debugging is reverse engineering your mistakes.",
+"If all else fails, add delay.",
+"You are the Joke."
 ]
 
 # ── Optional imports ───────────────────────────────────────────────────────────
@@ -122,6 +67,7 @@ try:
 except ImportError:
     SR_AVAILABLE = False
     print("[init] speech_recognition not installed — voice disabled")
+
 
 try:
     from openai import OpenAI as _OpenAI
@@ -855,6 +801,7 @@ def reminder_checker():
 
 _arduino = None          # holds the open serial.Serial object
 _servo_angle = SERVO_START_ANGLE   # tracks the last angle we sent
+_serial_lock = threading.Lock()    # guards concurrent serial writes
 
 def init_servo():
     """Open the serial connection to the Arduino and send the start angle.
@@ -886,8 +833,19 @@ def move_servo(angle):
     Clamps to min/max, skips tiny changes under 2°, catches serial errors."""
     global _arduino, _servo_angle
 
-    if not SERVO_ENABLED or _arduino is None:
+    if not SERVO_ENABLED:
         return
+
+    if _arduino is None:
+        try:
+            _arduino = pyserial.Serial(ARDUINO_PORT, ARDUINO_BAUD, timeout=1)
+            time.sleep(2)
+            print(f"[servo] Reconnected to {ARDUINO_PORT}")
+            with state_lock:
+                state["servo"]["connected"] = True
+        except Exception as e:
+            print(f"[servo] Reconnect failed: {e}")
+            return
 
     # Clamp to safe range
     angle = max(SERVO_MIN_ANGLE, min(SERVO_MAX_ANGLE, angle))
@@ -896,18 +854,18 @@ def move_servo(angle):
     if abs(angle - _servo_angle) < 2:
         return
 
-    try:
-        _arduino.write(f"{angle}\n".encode())
-        _servo_angle = angle
-        print(f"[servo] Sent servo angle: {angle}")
-        with state_lock:
-            state["servo"]["angle"] = angle
-    except Exception as e:
-        print(f"[servo] Serial write error: {e}")
-        # Mark as disconnected so we stop trying until restart
-        with state_lock:
-            state["servo"]["connected"] = False
-        _arduino = None
+    with _serial_lock:
+        try:
+            _arduino.write(f"{angle}\n".encode())
+            _servo_angle = angle
+            print(f"[servo] Sent servo angle: {angle}")
+            with state_lock:
+                state["servo"]["angle"] = angle
+        except Exception as e:
+            print(f"[servo] Serial write error: {e}")
+            with state_lock:
+                state["servo"]["connected"] = False
+            _arduino = None
 
 # ── Background: camera presence detection ─────────────────────────────────────
 def camera_thread():
