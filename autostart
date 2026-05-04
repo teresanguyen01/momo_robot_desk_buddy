@@ -1,0 +1,5 @@
+@xset s off     
+@xset -dpms                                                                                                                                                                  
+@xset s noblank 
+@sleep 5                                                                                                                                                                     
+@chromium-browser --kiosk --window-size=480,320 --noerrdialogs --disable-infobars http://127.0.0.1:5000

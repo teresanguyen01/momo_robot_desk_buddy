@@ -1,0 +1,15 @@
+[Unit]          
+Description=Momo Desk Buddy
+After=network.target sound.target
+                                                                                                                                                                               
+[Service]
+Type=simple                                                                                                                                                                  
+User=penguyen        
+WorkingDirectory=/home/pi/Documents/momo_robot_desk_buddy
+Environment=OPENAI_API_KEY=your-key-here
+ExecStart=/usr/bin/python3 /home/penguyen/momo_robot_desk_buddy/app.py                                                                                                   
+Restart=on-failure                                                                                                                                                           
+RestartSec=5                                                                                                                                                                 
+                                                                                                                                                                               
+[Install]       
+WantedBy=multi-user.target
