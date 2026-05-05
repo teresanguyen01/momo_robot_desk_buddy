@@ -395,6 +395,7 @@ _INTENT_SCHEMA = {
                 "rotate_servo",
                 "play_music",
                 "stop_music",
+                "clear_all_tasks",
                 "unknown",
             ],
         },
@@ -421,6 +422,7 @@ Parse the user's command into EXACTLY ONE intent:
 - rotate_servo: user wants to rotate/turn the camera. Put the target angle (0-180) OR a relative instruction like "left 30" or "right 45" as a plain string in 'task'. Examples: "90" for center, "left 30", "right 45". If they say "center" or "straight" use "90".
 - play_music: user wants to play a song. Put the song/artist name in 'task'.
 - stop_music: user wants to stop the music.
+- clear_all_tasks: user wants to delete/clear ALL tasks at once (e.g. "delete all tasks", "clear my list", "wipe everything"). Requires confirmation — just classify the intent, do not act yet.
 - unknown: anything else
 
 Keep spoken_response warm and encouraging (under 20 words), except for tell_joke where the joke itself goes in spoken_response."""
@@ -496,7 +498,10 @@ def keyword_fallback(command):
                     return {"intent":"complete_task","screen":"tasks","task":name,"spoken_response":""}
         return {"intent":"complete_task","screen":"tasks","task":"","spoken_response":""}
 
-    if any(w in cmd for w in ("remove","delete")):
+    if any(w in cmd for w in ("remove","delete","clear","wipe","erase")):
+        # "all" signals clear-all before checking single-task remove
+        if any(w in cmd for w in ("all", "everything", "every task", "entire list", "whole list")):
+            return {"intent":"clear_all_tasks","screen":"tasks","task":"","spoken_response":""}
         for kw in ("remove","delete"):
             if kw in cmd:
                 name = cmd.split(kw,1)[-1].strip().strip(".,!?")
@@ -705,6 +710,10 @@ def execute_action(action):
             if not action.get("spoken_response"):
                 action["spoken_response"] = f"Done! Removed '{task_name}'."
 
+        elif intent == "clear_all_tasks":
+            state["screen"] = "tasks"
+            # Deletion happens only after confirmation in handle_multi_turn
+
         elif intent == "show_tasks":
             state["screen"] = "tasks"
 
@@ -756,6 +765,17 @@ def handle_multi_turn(recognizer, action):
             execute_action(action)
             return action.get("spoken_response", f"Removed '{answer}'.")
         return "I didn't catch that. Try: momo, remove a task."
+
+    if intent == "clear_all_tasks":
+        answer = ask_and_listen("Are you sure you want to delete all your tasks? Say yes to confirm.")
+        if answer and any(w in answer for w in ("yes", "yeah", "yep", "sure", "confirm", "do it", "delete them", "go ahead")):
+            with state_lock:
+                count = len(state["tasks"])
+                state["tasks"] = []
+                state["face"]  = "happy"
+            save_tasks([])
+            return f"Done! I deleted all {count} task{'s' if count != 1 else ''}. Your list is squeaky clean!"
+        return "No worries, your tasks are safe! I'll keep them right here."
 
     return action.get("spoken_response", "Okay!")
 
