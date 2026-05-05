@@ -100,7 +100,7 @@ MIC_DEVICE_INDEX = None   # kept for reference; audio capture uses ALSA_MIC_DEVI
 ALSA_MIC_DEVICE  = "pulse"   # PipeWire-pulse (owns all hardware devices on this Pi)
 MIC_BOOST_PERCENT = 150      # system mic gain % (100 = default, 150–200 = louder pickup)
 CAMERA_ENABLED   = True
-CAMERA_INDEX     = 0      # Brio 100 webcam (OpenCV index)
+CAMERA_INDEX     = 1      # Brio 100 webcam (OpenCV index) — /dev/video1
 
 # ── Servo / Arduino config ─────────────────────────────────────────────────────
 SERVO_ENABLED    = True
