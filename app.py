@@ -13,6 +13,7 @@ import time
 import asyncio
 import threading
 import subprocess
+import queue
 import requests
 from flask import Flask, render_template, jsonify, request
 
@@ -185,7 +186,7 @@ def fetch_weather(city=CITY):
         return {"city": city, "temp": "--", "description": "Unavailable"}
 
 # ── Speech output ──────────────────────────────────────────────────────────────
-VOICE = "en-US-AvaNeural"   # change to any en-US-*Neural voice
+VOICE = "en-US-AvaNeural"   # VOICE CHANGES HERE!
 
 async def _edge_tts(text, path):
     try:
@@ -1017,6 +1018,65 @@ def _is_wake_command(text):
     t = text.lower().strip()
     return any(kw in t for kw in _WAKE_KEYWORDS)
 
+# ── Continuous background listener ────────────────────────────────────────────
+_bg_queue = queue.Queue(maxsize=4)  # transcripts from background recorder
+_bg_pause = threading.Event()       # set → background loop pauses (mic handoff)
+_bg_proc  = None                    # current parecord Popen (for early termination)
+
+def _bg_record_loop(recognizer):
+    """
+    Double-buffer pipeline: records 3s chunks with no gap.
+    While one chunk is being transcribed in a thread, the next is already recording.
+    Pushes transcripts to _bg_queue. Pauses when _bg_pause is set.
+    """
+    global _bg_proc
+    files = ["/tmp/momo_bg_0.wav", "/tmp/momo_bg_1.wav"]
+    slot  = 0
+    while True:
+        if _bg_pause.is_set():
+            time.sleep(0.05)
+            continue
+
+        wav  = files[slot]
+        slot ^= 1
+
+        try:
+            _bg_proc = subprocess.Popen(
+                ["timeout", "3", "parecord",
+                 "--channels=1", "--rate=16000", "--format=s16le", wav],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            _bg_proc.wait()
+            _bg_proc = None
+        except Exception as e:
+            _bg_proc = None
+            print(f"[voice-bg] record error: {e}")
+            time.sleep(0.2)
+            continue
+
+        if _bg_pause.is_set():
+            continue
+
+        # Transcribe in a background thread so the next recording starts immediately
+        wav_snap = wav
+        def _tx(w):
+            try:
+                with sr.AudioFile(w) as src:
+                    audio = recognizer.record(src)
+                text = recognizer.recognize_google(audio).lower()
+                if text:
+                    try:
+                        _bg_queue.put_nowait(text)
+                    except queue.Full:
+                        try: _bg_queue.get_nowait()
+                        except Exception: pass
+                        _bg_queue.put_nowait(text)
+            except sr.UnknownValueError:
+                pass
+            except Exception as e:
+                print(f"[voice-bg] transcribe error: {e}")
+        threading.Thread(target=_tx, args=(wav_snap,), daemon=True).start()
+
 # ── Voice loop ─────────────────────────────────────────────────────────────────
 WAKE_WORD = "momo"
 
@@ -1068,97 +1128,118 @@ def voice_loop():
     time.sleep(1.5)
     speak(_startup_greeting())
 
+    # Start the double-buffer background listener (records continuously, no gap)
+    threading.Thread(target=_bg_record_loop, args=(recognizer,), daemon=True, name="BgRecord").start()
+    print("[voice] Continuous background listener started")
+
     while True:
-        # ══ Phase 1: record 4s chunk, look for wake word ══════════════════
-        heard = _record_and_transcribe(recognizer, duration=4)
+        # ══ Phase 1: read from background pipeline — no recording gap ═════
+        try:
+            heard = _bg_queue.get(timeout=1)
+        except queue.Empty:
+            continue
 
         if not heard:
-            print("[voice] (nothing heard)")
             continue
         print(f"[voice] Heard: '{heard}'")
         if WAKE_WORD not in heard:
             continue
 
-        print(f"[voice] Wake word detected: '{heard}'")
-        after_wake = heard.split(WAKE_WORD, 1)[-1].strip()
+        # Hand off the mic: pause bg recorder and kill its current recording
+        _bg_pause.set()
+        if _bg_proc and _bg_proc.poll() is None:
+            try:
+                _bg_proc.terminate()
+                _bg_proc.wait(timeout=1)
+            except Exception:
+                pass
+        while not _bg_queue.empty():
+            try: _bg_queue.get_nowait()
+            except Exception: pass
 
-        # ── Read sleep_mode once outside the hot path ──────────────────────
-        with state_lock:
-            currently_sleeping = state["sleep_mode"]
+        try:
+            print(f"[voice] Wake word detected: '{heard}'")
+            after_wake = heard.split(WAKE_WORD, 1)[-1].strip()
 
-        # ══ Sleep mode: only accept wake commands ═════════════════════════
-        if currently_sleeping:
-            if after_wake and _is_wake_command(after_wake):
-                with state_lock:
-                    state["sleep_mode"] = False
-                    state["face"]       = "happy"
-                speak("I'm back! What do you need?")
-                with state_lock:
-                    state["face"] = "idle"
-            else:
-                print("[voice] Sleeping — ignoring command")
-            continue
-
-        # ══ Phase 2: active command cycle ════════════════════════════════════
-        if not after_wake:
-            speak("Yeah?")
+            # ── Read sleep_mode once outside the hot path ──────────────────
             with state_lock:
-                state["voice_state"] = "listening"
-            after_wake = _record_and_transcribe(recognizer, duration=5)
+                currently_sleeping = state["sleep_mode"]
+
+            # ══ Sleep mode: only accept wake commands ═════════════════════
+            if currently_sleeping:
+                if after_wake and _is_wake_command(after_wake):
+                    with state_lock:
+                        state["sleep_mode"] = False
+                        state["face"]       = "happy"
+                    speak("I'm back! What do you need?")
+                    with state_lock:
+                        state["face"] = "idle"
+                else:
+                    print("[voice] Sleeping — ignoring command")
+                continue
+
+            # ══ Phase 2: active command cycle ════════════════════════════════
             if not after_wake:
+                speak("Yeah?")
+                with state_lock:
+                    state["voice_state"] = "listening"
+                after_wake = _record_and_transcribe(recognizer, duration=5)
+                if not after_wake:
+                    with state_lock:
+                        state["voice_state"] = "idle"
+                    continue
+
+            command = after_wake
+            print(f"[voice] Command to parse: '{command}'")
+
+            # ── Check for sleep command before processing normally ──────────
+            if _is_sleep_command(command):
+                with state_lock:
+                    state["sleep_mode"] = True
+                    state["face"]       = "sleeping"
+                speak("Okay, going to sleep! Say momo wake up when you need me.")
                 with state_lock:
                     state["voice_state"] = "idle"
                 continue
 
-        command = after_wake
-        print(f"[voice] Command to parse: '{command}'")
-
-        # ── Check for sleep command before processing normally ─────────────
-        if _is_sleep_command(command):
             with state_lock:
-                state["sleep_mode"] = True
-                state["face"]       = "sleeping"
-            speak("Okay, going to sleep! Say momo wake up when you need me.")
+                state["voice_state"] = "thinking"
+
+            action = parse_command(command) or keyword_fallback(command)
+
+            needs_followup = (
+                action.get("intent") in ("add_task","complete_task","remove_task")
+                and not action.get("task","").strip()
+            )
+            if not needs_followup:
+                execute_action(action)
+
+            if "_servo_angle" in action:
+                move_servo(action["_servo_angle"])
+
+            if "_stop_music" in action:
+                stop_music()
+
+            spoken = handle_multi_turn(recognizer, action)
+            with state_lock:
+                state["voice_state"] = "speaking"
+                state["last_spoken"] = spoken
+
+            speak(spoken)
+
+            # Start music AFTER TTS finishes so aplay device isn't busy
+            if "_play_song" in action and action["_play_song"]:
+                threading.Thread(target=play_music, args=(action["_play_song"],), daemon=True).start()
+
             with state_lock:
                 state["voice_state"] = "idle"
-            continue
+                if state["face"] in ("happy","excited"):
+                    state["face"] = "idle" if state["timer"]["active"] is False else "timer"
+            time.sleep(0.3)
 
-        with state_lock:
-            state["voice_state"] = "thinking"
-
-        action = parse_command(command) or keyword_fallback(command)
-
-        needs_followup = (
-            action.get("intent") in ("add_task","complete_task","remove_task")
-            and not action.get("task","").strip()
-        )
-        if not needs_followup:
-            execute_action(action)
-
-        # If the action requested a servo move, do it outside the lock
-        if "_servo_angle" in action:
-            move_servo(action["_servo_angle"])
-
-        if "_stop_music" in action:
-            stop_music()
-
-        spoken = handle_multi_turn(recognizer, action)
-        with state_lock:
-            state["voice_state"] = "speaking"
-            state["last_spoken"] = spoken
-
-        speak(spoken)
-
-        # Start music AFTER TTS finishes so aplay device isn't busy
-        if "_play_song" in action and action["_play_song"]:
-            threading.Thread(target=play_music, args=(action["_play_song"],), daemon=True).start()
-
-        with state_lock:
-            state["voice_state"] = "idle"
-            # Return face to idle after positive reactions
-            if state["face"] in ("happy","excited"):
-                state["face"] = "idle" if state["timer"]["active"] is False else "timer"
-        time.sleep(0.3)
+        finally:
+            # Always give the mic back to the background listener
+            _bg_pause.clear()
 
 # ── Flask routes ───────────────────────────────────────────────────────────────
 @app.route("/")
