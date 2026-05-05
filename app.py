@@ -206,7 +206,7 @@ def speak(text):
 
     if asyncio.run(_edge_tts(safe, mp3)):
         if subprocess.run("which mpg123", shell=True, capture_output=True).returncode == 0:
-            subprocess.run(f"mpg123 -q {mp3}", shell=True)
+            subprocess.run(f"mpg123 -q -o pulse {mp3}", shell=True)
         else:
             subprocess.run(f"aplay -D pulse {mp3}", shell=True)
         return
