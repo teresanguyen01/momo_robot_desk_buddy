@@ -104,7 +104,7 @@ CAMERA_INDEX     = 0      # Brio 100 webcam (OpenCV index) — /dev/video1
 
 # ── Servo / Arduino config ─────────────────────────────────────────────────────
 SERVO_ENABLED    = True
-ARDUINO_PORT     = "/dev/arduino"  # stable udev symlink — never changes on replug
+ARDUINO_PORT     = "/dev/ttyACM1"
 ARDUINO_BAUD     = 9600
 SERVO_REVERSE    = False  # set True if servo moves opposite to face direction
 SERVO_START_ANGLE = 90   # degrees — center position sent on startup
