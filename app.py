@@ -1,7 +1,8 @@
 """
 Momo Desk Buddy — Flask backend
 Run: python app.py
-Set: export OPENAI_API_KEY=sk-...
+
+ECE 3481 MAIN FILE!
 """
 import random
 import os
@@ -17,6 +18,7 @@ import queue
 import requests
 from flask import Flask, render_template, jsonify, request
 
+# random jokes made by GPT - not that funny
 JOKES = [
 "My real-time system missed a deadline… now it’s just real-late.",
 "Hard real-time fails once and dies, soft real-time fails and hopes nobody noticed.",
@@ -61,7 +63,6 @@ JOKES = [
 "You are the Joke."
 ]
 
-# ── Optional imports ───────────────────────────────────────────────────────────
 try:
     import speech_recognition as sr
     SR_AVAILABLE = True
@@ -91,20 +92,20 @@ except ImportError:
     SERIAL_AVAILABLE = False
     print("[init] pyserial not installed — servo disabled (pip install pyserial)")
 
-# ── Configuration ──────────────────────────────────────────────────────────────
-CITY             = "New Haven"
+# Configs
+CITY             = "New Haven" # for the weather
 TASKS_FILE       = os.path.join(os.path.dirname(__file__), "tasks.json")
 OPENAI_API_KEY   = os.environ.get("OPENAI_API_KEY", "")
 VOICE_ENABLED    = True
-MIC_DEVICE_INDEX = None   # kept for reference; audio capture uses ALSA_MIC_DEVICE directly
-ALSA_MIC_DEVICE  = "pulse"   # PipeWire-pulse (owns all hardware devices on this Pi)
-MIC_BOOST_PERCENT = 150      # system mic gain % (100 = default, 150–200 = louder pickup)
+MIC_DEVICE_INDEX = None
+ALSA_MIC_DEVICE  = "pulse"
+MIC_BOOST_PERCENT = 150 
 CAMERA_ENABLED   = True
-CAMERA_INDEX     = 1      # Brio 100 webcam (OpenCV index) — /dev/video1
+CAMERA_INDEX     = 1
 
-# ── Servo / Arduino config ─────────────────────────────────────────────────────
+# Servo Arduino Configs
 SERVO_ENABLED    = True
-ARDUINO_PORT     = "/dev/ttyACM1"
+ARDUINO_PORT     = "/dev/ttyACM1" # WHY DO YOU KEEP CHANGING
 ARDUINO_BAUD     = 9600
 SERVO_REVERSE    = False  # set True if servo moves opposite to face direction
 SERVO_START_ANGLE = 90   # degrees — center position sent on startup
@@ -113,19 +114,19 @@ SERVO_MAX_ANGLE  = 180
 SERVO_DEAD_ZONE  = 25    # px — ignore face offset smaller than this (prevents jitter)
 SERVO_STEP_SIZE  = 4     # degrees to move per camera frame (higher = faster tracking)
 
-# ── Flask ──────────────────────────────────────────────────────────────────────
+# Flask Server
 app = Flask(__name__)
 print("Mic device index is", MIC_DEVICE_INDEX)
 
-# ── Shared state + lock ────────────────────────────────────────────────────────
+# Shared State & Lock
 # RULE: all reads/writes to `state` must be inside `with state_lock`.
 # Blocking calls (network, subprocess, sleep, listen) must be OUTSIDE the lock.
 state_lock = threading.Lock()
 
 state = {
     "screen":      "clock",
-    "voice_state": "idle",      # idle | listening | thinking | speaking
-    "face":        "idle",      # idle | happy | excited | sad | sleeping | timer
+    "voice_state": "idle",
+    "face":        "idle",
     "last_spoken": "",
     "weather": {"city": CITY, "temp": "--", "description": "Not loaded"},
     "tasks":    [],
@@ -146,7 +147,7 @@ state = {
     },
 }
 
-# ── Task persistence ───────────────────────────────────────────────────────────
+# Keep the tasks
 def load_tasks():
     if os.path.exists(TASKS_FILE):
         try:
@@ -170,7 +171,7 @@ def save_tasks(tasks):
 def next_task_id(tasks):
     return max((t["id"] for t in tasks), default=0) + 1
 
-# ── Weather ────────────────────────────────────────────────────────────────────
+# Weather API
 def fetch_weather(city=CITY):
     """Network call — must NOT be called while holding state_lock."""
     try:
@@ -185,7 +186,7 @@ def fetch_weather(city=CITY):
         print(f"[weather] Error: {e}")
         return {"city": city, "temp": "--", "description": "Unavailable"}
 
-# ── Speech output ──────────────────────────────────────────────────────────────
+# Voice changes
 VOICE = "en-US-AvaNeural"   # VOICE CHANGES HERE!
 
 async def _edge_tts(text, path):
@@ -217,8 +218,8 @@ def speak(text):
 
     subprocess.run(f"aplay -D pulse {wav}", shell=True)
 
-# ── Music playback ────────────────────────────────────────────────────────────
-_music_process = None   # holds the running yt-dlp | mpg123 subprocess
+# Play Music
+_music_process = None
 
 def play_music(song_name):
     """Search YouTube for song_name, convert with ffmpeg, play via aplay."""
@@ -289,7 +290,7 @@ def stop_music():
 def is_music_playing():
     return _music_process is not None and _music_process.poll() is None
 
-# ── Spoken response helpers ────────────────────────────────────────────────────
+# Spoken response helpers down here
 def _time_response():
     hour, minute, ampm = int(time.strftime("%I")), time.strftime("%M"), time.strftime("%p").lower()
     if minute == "00":
@@ -306,6 +307,7 @@ def _weather_response(weather):
 
     desc, city, d = weather.get("description",""), weather.get("city",""), weather.get("description","").lower()
 
+    # we should probably make these messages cuter
     if   temp <= 32: rec = "It's freezing! Bundle up with a heavy coat, gloves, and a hat."
     elif temp <= 45: rec = "Pretty cold out there. I'd recommend a warm jacket."
     elif temp <= 55: rec = "It's chilly. A light jacket or sweater should do the trick."
@@ -379,7 +381,7 @@ def _parse_duration_minutes(text):
     if "half" in t and "hour" in t: return 30
     return None
 
-# ── OpenAI command parser ──────────────────────────────────────────────────────
+# ARCHIVE FAILED OPENAI STUFF
 _INTENT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -553,7 +555,7 @@ def keyword_fallback(command):
     return {"intent":"unknown","screen":"clock","task":"",
             "spoken_response":"I didn't get that."}
 
-# ── Intent execution ───────────────────────────────────────────────────────────
+# Execute the action
 def execute_action(action):
     """
     Apply action to state. Fills in action["spoken_response"] when needed.
@@ -563,7 +565,7 @@ def execute_action(action):
     screen    = action.get("screen",  "clock")
     task_name = action.get("task",    "").strip()
 
-    # ── pre-fetch outside the lock ─────────────────────────────────────────────
+    # pre fetch outside the lock
     new_weather = None
     if intent in ("get_weather", "daily_briefing"):
         new_weather = fetch_weather()
@@ -572,7 +574,7 @@ def execute_action(action):
     if intent == "daily_briefing" and new_weather:
         briefing_text = _daily_briefing(new_weather)
 
-    # ── mutate state inside the lock ──────────────────────────────────────────
+    # mutate state inside lock
     with state_lock:
 
         if intent == "get_weather" and new_weather:
@@ -720,7 +722,7 @@ def execute_action(action):
         else:
             state["screen"] = screen
 
-# ── Multi-turn conversation handler ───────────────────────────────────────────
+# multi conversation
 def handle_multi_turn(recognizer, action):
     """
     Handles follow-up questions for intents that need more info.
@@ -779,7 +781,7 @@ def handle_multi_turn(recognizer, action):
 
     return action.get("spoken_response", "Okay!")
 
-# ── Background: timer tick ─────────────────────────────────────────────────────
+# background timer
 def timer_tick():
     """Decrements the timer every second. Fires a spoken notification when done."""
     while True:
@@ -802,7 +804,7 @@ def timer_tick():
             if state["face"] == "excited":
                 state["face"] = "idle"
 
-# ── Background: reminder checker ──────────────────────────────────────────────
+# background timer reminder
 def reminder_checker():
     """Checks for due reminders every 20 seconds."""
     while True:
@@ -817,10 +819,7 @@ def reminder_checker():
             print(f"[reminder] Firing: {text}")
             speak(f"Hey! Just a reminder: {text}. Hope you're staying on top of things!")
 
-# ── Arduino servo control ──────────────────────────────────────────────────────
-# The Arduino sketch reads a plain integer (0–180) followed by '\n' on Serial
-# and moves the servo to that angle. We just write that over pyserial.
-
+# SERVO CONTROL STUFF
 _arduino = None          # holds the open serial.Serial object
 _servo_angle = SERVO_START_ANGLE   # tracks the last angle we sent
 _serial_lock = threading.Lock()    # guards concurrent serial writes
@@ -836,7 +835,7 @@ def init_servo():
 
     try:
         _arduino = pyserial.Serial(ARDUINO_PORT, ARDUINO_BAUD, timeout=1)
-        time.sleep(2)   # wait for Arduino to reset after serial open
+        time.sleep(2)
         _servo_angle = SERVO_START_ANGLE
         _arduino.write(f"{SERVO_START_ANGLE}\n".encode())
         print(f"[servo] Arduino servo controller connected on {ARDUINO_PORT}")
@@ -889,7 +888,7 @@ def move_servo(angle):
                 state["servo"]["connected"] = False
             _arduino = None
 
-# ── Background: camera presence detection ─────────────────────────────────────
+# Camera human face detection here
 def camera_thread():
     """Uses OpenCV face detection for presence detection and servo face-tracking."""
     if not CV2_AVAILABLE:
@@ -948,7 +947,6 @@ def camera_thread():
                     minSize=(40, 80),
                 )
 
-            # ── Presence logic ─────────────────────────────────────────────────
             detected = len(faces) > 0
 
             if detected:
@@ -984,8 +982,6 @@ def camera_thread():
                         state["face"] = "happy"
 
             was_present = present_now
-
-            # ── Servo face-tracking ────────────────────────────────────────────
             if SERVO_ENABLED and len(faces) > 0 and not sleeping:
 
                 # Pick the largest detected region (most likely the main person)
@@ -1016,7 +1012,7 @@ def camera_thread():
         print(f"[camera] Error: {e}")
 
 
-# ── Sleep / wake helpers ───────────────────────────────────────────────────────
+# sleep and wake up
 _SLEEP_KEYWORDS = {
     "go to sleep", "sleep", "turn off", "shut down", "shutdown",
     "don't need you", "i don't need you", "leave me alone",
@@ -1038,7 +1034,7 @@ def _is_wake_command(text):
     t = text.lower().strip()
     return any(kw in t for kw in _WAKE_KEYWORDS)
 
-# ── Continuous background listener ────────────────────────────────────────────
+# background listener
 _bg_queue = queue.Queue(maxsize=4)  # transcripts from background recorder
 _bg_pause = threading.Event()       # set → background loop pauses (mic handoff)
 _bg_proc  = None                    # current parecord Popen (for early termination)
@@ -1077,7 +1073,6 @@ def _bg_record_loop(recognizer):
         if _bg_pause.is_set():
             continue
 
-        # Transcribe in a background thread so the next recording starts immediately
         wav_snap = wav
         def _tx(w):
             try:
@@ -1097,7 +1092,7 @@ def _bg_record_loop(recognizer):
                 print(f"[voice-bg] transcribe error: {e}")
         threading.Thread(target=_tx, args=(wav_snap,), daemon=True).start()
 
-# ── Voice loop ─────────────────────────────────────────────────────────────────
+# voice loop
 WAKE_WORD = "momo"
 
 def _record_and_transcribe(recognizer, duration=5):
@@ -1153,7 +1148,6 @@ def voice_loop():
     print("[voice] Continuous background listener started")
 
     while True:
-        # ══ Phase 1: read from background pipeline — no recording gap ═════
         try:
             heard = _bg_queue.get(timeout=1)
         except queue.Empty:
@@ -1181,11 +1175,9 @@ def voice_loop():
             print(f"[voice] Wake word detected: '{heard}'")
             after_wake = heard.split(WAKE_WORD, 1)[-1].strip()
 
-            # ── Read sleep_mode once outside the hot path ──────────────────
             with state_lock:
                 currently_sleeping = state["sleep_mode"]
 
-            # ══ Sleep mode: only accept wake commands ═════════════════════
             if currently_sleeping:
                 if after_wake and _is_wake_command(after_wake):
                     with state_lock:
@@ -1198,7 +1190,6 @@ def voice_loop():
                     print("[voice] Sleeping — ignoring command")
                 continue
 
-            # ══ Phase 2: active command cycle ════════════════════════════════
             if not after_wake:
                 speak("Yeah?")
                 with state_lock:
@@ -1212,7 +1203,6 @@ def voice_loop():
             command = after_wake
             print(f"[voice] Command to parse: '{command}'")
 
-            # ── Check for sleep command before processing normally ──────────
             if _is_sleep_command(command):
                 with state_lock:
                     state["sleep_mode"] = True
@@ -1246,8 +1236,6 @@ def voice_loop():
                 state["last_spoken"] = spoken
 
             speak(spoken)
-
-            # Start music AFTER TTS finishes so aplay device isn't busy
             if "_play_song" in action and action["_play_song"]:
                 threading.Thread(target=play_music, args=(action["_play_song"],), daemon=True).start()
 
@@ -1261,7 +1249,7 @@ def voice_loop():
             # Always give the mic back to the background listener
             _bg_pause.clear()
 
-# ── Flask routes ───────────────────────────────────────────────────────────────
+# Flask routes
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -1358,7 +1346,6 @@ def api_music_stop():
     stop_music()
     return jsonify({"ok": True})
 
-# ── Startup ────────────────────────────────────────────────────────────────────
 atexit.register(stop_music)   # kill music pipeline on any exit (Ctrl+C, crash, etc.)
 
 if __name__ == "__main__":
