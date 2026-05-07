@@ -1346,6 +1346,7 @@ def api_music_stop():
     stop_music()
     return jsonify({"ok": True})
 
+# startup
 atexit.register(stop_music)   # kill music pipeline on any exit (Ctrl+C, crash, etc.)
 
 if __name__ == "__main__":

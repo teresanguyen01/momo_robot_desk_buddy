@@ -3,8 +3,8 @@ import subprocess
 import pygame
 import speech_recognition as sr
 
-from ui import draw_clock, draw_weather, draw_message
-from weather import get_weather
+from src.ui import draw_clock, draw_weather, draw_message
+from src.weather import get_weather
 
 
 def speak(text):
